@@ -32,7 +32,7 @@ local Field = {
         --    @args.validator {function} type validator
         --    @args.as {function} return parse value
         -------------------------------------------
-        new_field_type = {
+        local new_field_type = {
             -- some sql valid type
             __type__ = args.__type__ or self.__type__,
 

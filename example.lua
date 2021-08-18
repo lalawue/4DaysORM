@@ -11,8 +11,13 @@ DB = {
 
 ----------------------------- REQUIRE --------------------------------
 
-local Table = require("orm.model")
-local fields = require("orm.tools.fields")
+-- local Table = require("orm.model")
+-- local fields = require("orm.tools.fields")
+local Table, fields
+do
+    local a= require("orm.all")
+    Table, fields = a[1], a[2]
+end
 
 ----------------------------- CREATE TABLE --------------------------------
 
