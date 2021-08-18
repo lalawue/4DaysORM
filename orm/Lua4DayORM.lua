@@ -23,18 +23,18 @@ local WARNING = 'w'
 local INFO = 'i'
 local DEBUG = 'd'
 
+local _pairs = pairs
+
 local All_Tables = {}
 
 local Type
 
-local db
+local dbInstance
 
 local QueryList
 local Query
 
-local _pairs = pairs
-
-local function pairs(tbl)
+local function tablePairs(tbl)
     if tbl.__classname__ == QUERY_LIST then
         return tbl()
     else
@@ -61,45 +61,45 @@ local function BACKTRACE(tracetype, message)
     end
 end
 
-function string.endswith(String, End)
+local function _endswith(String, End)
     return End == '' or string.sub(String, -string.len(End)) == End
 end
 
-function string.cutend(String, End)
+local function _cutend(String, End)
     return End == '' and String or string.sub(String, 0, -#End - 1)
 end
 
-function string.divided_into(String, separator)
+local function _divided_into(String, separator)
     local separator_pos = string.find(String, separator)
     return string.sub(String, 0, separator_pos - 1),
            string.sub(String, separator_pos + 1, #String)
 end
 
-function table.has_key(array, key)
-    if Type.is.table(key) and key.colname then
-        key = key.colname
-    end
+-- function table.has_key(array, key)
+--     if Type.is.table(key) and key.colname then
+--         key = key.colname
+--     end
 
-    for array_key, _  in pairs(array) do
-        if array_key == key then
-            return true
-        end
-    end
-end
+--     for array_key, _  in pairs(array) do
+--         if array_key == key then
+--             return true
+--         end
+--     end
+-- end
 
-function table.has_value(array, value)
+local function _tableHasValue(array, value)
     if Type.is.table(value) and value.colname then
         value = value.colname
     end
 
-    for _, array_value  in pairs(array) do
+    for _, array_value  in tablePairs(array) do
         if array_value == value then
             return true
         end
     end
 end
 
-function table.join(array, separator)
+local function _tableJoin(array, separator)
     local result = ""
     local counter = 0
 
@@ -107,7 +107,7 @@ function table.join(array, separator)
         separator = ","
     end
 
-    for _, value in pairs(array) do
+    for _, value in tablePairs(array) do
         if counter ~= 0 then
             value = separator .. value
         end
@@ -198,7 +198,7 @@ local function escapeValue(own_table, colname, colvalue)
 
         -- See https://keplerproject.github.io/luasql/manual.html for a list of
         -- database drivers that support this method
-        colvalue = db.connect:escape(colvalue)
+        colvalue = dbInstance.connect:escape(colvalue)
       elseif (DB.type == "oracle") then
         BACKTRACE(WARNING, "Can't autoescape values for oracle databases (Tried to escape field `" .. colname .. "`)");
       end
@@ -275,8 +275,8 @@ local Select = function(own_table)
             local _in
 
             -- Special conditions that need no value escaping
-            if colname:endswith(IS_NULL) then
-                colname = string.cutend(colname, IS_NULL)
+            if _endswith(colname, IS_NULL) then
+                colname = _cutend(colname, IS_NULL)
 
                 if value then
                     result = " IS NULL"
@@ -284,22 +284,22 @@ local Select = function(own_table)
                     result = " NOT NULL"
                 end
 
-            elseif colname:endswith(IN) or colname:endswith(NOT_IN) then
-                rule = colname:endswith(IN) and IN or NOT_IN
+            elseif _endswith(colname, IN) or _endswith(colname, NOT_IN) then
+                rule = _endswith(colname, IN) and IN or NOT_IN
 
                 if type(value) == "table" and #value > 0 then
-                    colname = string.cutend(colname, rule)
+                    colname = _cutend(colname, rule)
                     table_column = self.own_table:get_column(colname)
                     _in = {}
 
-                    for counter, val in pairs(value) do
-                        table.insert(_in, table_column.field.as(val))
+                    for counter, val in tablePairs(value) do
+                        _in[#_in + 1] = table_column.field.as(val)
                     end
 
                     if rule == IN then
-                        result = " IN (" .. table.join(_in) .. ")"
+                        result = " IN (" .. _tableJoin(_in) .. ")"
                     elseif rule == NOT_IN then
-                        result = " NOT IN (" .. table.join(_in) .. ")"
+                        result = " NOT IN (" .. _tableJoin(_in) .. ")"
                     end
 
                 end
@@ -309,20 +309,20 @@ local Select = function(own_table)
                 -- Conditions that need value escaping when it's enabled
                 local conditionPrepend = ""
 
-                if colname:endswith(LESS_THEN) and Type.is.number(value) then
-                    colname = string.cutend(colname, LESS_THEN)
+                if _endswith(colname, LESS_THEN) and Type.is.number(value) then
+                    colname = _cutend(colname, LESS_THEN)
                     conditionPrepend = " < "
 
-                elseif colname:endswith(MORE_THEN) and Type.is.number(value) then
-                    colname = string.cutend(colname, MORE_THEN)
+                elseif _endswith(colname, MORE_THEN) and Type.is.number(value) then
+                    colname = _cutend(colname, MORE_THEN)
                     conditionPrepend = " > "
 
-                elseif colname:endswith(EQ_OR_LESS_THEN) and Type.is.number(value) then
-                    colname = string.cutend(colname, EQ_OR_LESS_THEN)
+                elseif _endswith(colname, EQ_OR_LESS_THEN) and Type.is.number(value) then
+                    colname = _cutend(colname, EQ_OR_LESS_THEN)
                     conditionPrepend = " <= "
 
-                elseif colname:endswith(EQ_OR_MORE_THEN) and Type.is.number(value) then
-                    colname = string.cutend(colname, EQ_OR_MORE_THEN)
+                elseif _endswith(colname, EQ_OR_MORE_THEN) and Type.is.number(value) then
+                    colname = _cutend(colname, EQ_OR_MORE_THEN)
                     conditionPrepend = " >= "
 
                 else
@@ -349,14 +349,13 @@ local Select = function(own_table)
             local result = {}
             local parsed_column
 
-            for _, col in pairs(list_of_cols) do
+            for _, col in tablePairs(list_of_cols) do
                 if Type.is.table(col) and col.__classtype__ == AGGREGATOR then
                     col.__table__ = self.own_table.__tablename__
-                    table.insert(result, col)
-
+                    result[#result + 1] = col
                 else
                     parsed_column, _ = self.own_table:column(col)
-                    table.insert(result, parsed_column)
+                    result[#result + 1] = parsed_column
                 end
             end
 
@@ -378,7 +377,7 @@ local Select = function(own_table)
             condition = condition .. start_with
 
             -- TODO: add OR
-            for colname, value in pairs(rules) do
+            for colname, value in tablePairs(rules) do
                 _equation = self:_build_equation(colname, value)
 
                 if counter ~= 0 then
@@ -393,7 +392,7 @@ local Select = function(own_table)
         end,
 
         _has_foreign_key_table = function (self, left_table, right_table)
-            for _, key in pairs(left_table.__foreign_keys) do
+            for _, key in tablePairs(left_table.__foreign_keys) do
                 if key.settings.to == right_table then
                     return true
                 end
@@ -409,7 +408,7 @@ local Select = function(own_table)
             local parsed_column, _
             local tablename
 
-            for _, value in pairs(self._rules.columns.join) do
+            for _, value in tablePairs(self._rules.columns.join) do
                 left_table = value[1]
                 right_table = value[2]
                 mode = value[3]
@@ -439,7 +438,7 @@ local Select = function(own_table)
                     BACKTRACE(WARNING, "Not valid tables links")
                 end
 
-                for _, key in pairs(left_table.__foreign_keys) do
+                for _, key in tablePairs(left_table.__foreign_keys) do
                     if key.settings.to == right_table then
                         colname = key.name
 
@@ -475,12 +474,12 @@ local Select = function(own_table)
             end
 
             -- get current column
-            for _, column in pairs(own_table.__colnames) do
+            for _, column in tablePairs(own_table.__colnames) do
                 colname, colname_as = own_table:column(column.name)
-                table.insert(include, colname .. " AS " .. colname_as)
+                include[#include + 1] = colname .. " AS " .. colname_as
             end
 
-            include = table.join(include)
+            include = _tableJoin(include)
 
             return include
         end,
@@ -505,17 +504,17 @@ local Select = function(own_table)
                 local join_tables = {}
                 local left_table, right_table
 
-                for _, values in pairs(self._rules.columns.join) do
+                for _, values in tablePairs(self._rules.columns.join) do
                     left_table = values[1]
                     right_table = values[2]
 
-                    if not table.has_value(unique_tables, left_table) then
-                        table.insert(unique_tables, left_table)
+                    if not _tableHasValue(unique_tables, left_table) then
+                        unique_tables[#unique_tables + 1] = left_table
                         _select = _select .. ", " .. self:_build_including(left_table)
                     end
 
-                    if not table.has_value(unique_tables, right_table) then
-                        table.insert(unique_tables, right_table)
+                    if not _tableHasValue(unique_tables, right_table) then
+                        unique_tables[#unique_tables + 1] = right_table
                         _select = _select .. ", " .. self:_build_including(right_table)
                     end
                 end
@@ -528,12 +527,12 @@ local Select = function(own_table)
                 local aggregators = {}
                 local aggregator, as
 
-                for _, value in pairs(self._rules.columns.include) do
+                for _, value in tablePairs(self._rules.columns.include) do
                     _, as = own_table:column(value.as)
-                    table.insert(aggregators, value[1] .. " AS " .. as)
+                    aggregators[#aggregators + 1] = value[1] .. " AS " .. as
                 end
 
-                _select = _select .. ", " .. table.join(aggregators)
+                _select = _select .. ", " .. _tableJoin(aggregators)
             end
             ------------------- End Include Columns To Select ----------------
 
@@ -552,7 +551,7 @@ local Select = function(own_table)
             -- Build GROUP BY
             if #self._rules.group > 0 then
                 rule = self:_update_col_names(self._rules.group)
-                rule = table.join(rule)
+                rule = _tableJoin(rule)
                 _select = _select .. " \nGROUP BY " .. rule
             end
 
@@ -565,7 +564,7 @@ local Select = function(own_table)
             -- Build ORDER BY
             if #self._rules.order > 0 then
                 rule = self:_update_col_names(self._rules.order)
-                rule = table.join(rule)
+                rule = _tableJoin(rule)
                 _select = _select .. " \nORDER BY " .. rule
             end
 
@@ -579,7 +578,7 @@ local Select = function(own_table)
                 _select = _select .. " \nOFFSET " .. self._rules.offset
             end
 
-            return db:rows(_select, self.own_table)
+            return dbInstance:rows(_select, self.own_table)
         end,
 
         -- Add column to table
@@ -589,14 +588,14 @@ local Select = function(own_table)
         -------------------------------------------------
         _add_col_to_table = function (self, col_table, colname)
             if Type.is.str(colname) and self.own_table:has_column(colname) then
-                table.insert(col_table, colname)
+                col_table[#col_table + 1] = colname
 
             elseif Type.is.table(colname) then
-                for _, column in pairs(colname) do
+                for _, column in tablePairs(colname) do
                     if (Type.is.table(column) and column.__classtype__ == AGGREGATOR
                     and self.own_table:has_column(column.colname))
                     or self.own_table:has_column(column) then
-                        table.insert(col_table, column)
+                        col_table[#col_table + 1] = column
                     end
                 end
 
@@ -613,10 +612,11 @@ local Select = function(own_table)
         -- Including columns to select query
         include = function (self, column_list)
             if Type.is.table(column_list) then
-                for _, value in pairs(column_list) do
+                local tbl = self._rules.columns.include
+                for _, value in tablePairs(column_list) do
                     if Type.is.table(value) and value.as and value[1]
                     and value[1].__classtype__ == AGGREGATOR then
-                        table.insert(self._rules.columns.include, value)
+                        tbl[#tbl + 1] = value
                     else
                         BACKTRACE(WARNING, "Not valid aggregator syntax")
                     end
@@ -639,8 +639,8 @@ local Select = function(own_table)
             end
 
             if left_table.__tablename__ then
-                table.insert(self._rules.columns.join,
-                            {left_table, right_table, MODE})
+                local tbl = self._rules.columns.join
+                tbl[#tbl + 1] = {left_table, right_table, MODE}
             else
                 BACKTRACE(WARNING, "Not table in join")
             end
@@ -677,7 +677,7 @@ local Select = function(own_table)
 
         -- SQL Where query rules
         where = function (self, args)
-            for col, value in pairs(args) do
+            for col, value in tablePairs(args) do
                 self._rules.where[col] = value
             end
 
@@ -720,7 +720,7 @@ local Select = function(own_table)
 
         -- Having
         having = function (self, args)
-            for col, value in pairs(args) do
+            for col, value in tablePairs(args) do
                 self._rules.having[col] = value
             end
 
@@ -739,7 +739,7 @@ local Select = function(own_table)
                 local _set_tbl = {}
                 local i=1
 
-                for colname, new_value in pairs(data) do
+                for colname, new_value in tablePairs(data) do
                     coltype = self.own_table:get_column(colname)
 
                     if coltype and coltype.field.validator(new_value) then
@@ -769,7 +769,7 @@ local Select = function(own_table)
                         _update = _update .. " SET " .. table.concat(_set_tbl,",") .. " " .. _where
                     end
 
-                    db:execute(_update)
+                    dbInstance:execute(_update)
                 else
                     BACKTRACE(WARNING, "No table columns for update")
                 end
@@ -792,7 +792,7 @@ local Select = function(own_table)
                 BACKTRACE(WARNING, "Try delete all values")
             end
 
-            db:execute(_delete)
+            dbInstance:execute(_delete)
         end,
 
         --------------------------------------------------------
@@ -900,7 +900,7 @@ function Query(own_table, data)
             local value
             local colname
 
-            for _, table_column in pairs(self.own_table.__colnames) do
+            for _, table_column in tablePairs(self.own_table.__colnames) do
                 colname = table_column.name
 
                 if colname ~= ID then
@@ -945,7 +945,7 @@ function Query(own_table, data)
             insert = insert .. ") \n\t    VALUES (" .. values .. ")"
 
             -- TODO: return valid ID
-            _connect = db:insert(insert)
+            _connect = dbInstance:insert(insert)
 
             self._data.id = {new = _connect}
         end,
@@ -956,7 +956,7 @@ function Query(own_table, data)
             local equation_for_set = {}
             local set, coltype
 
-            for colname, colinfo in pairs(self._data) do
+            for colname, colinfo in tablePairs(self._data) do
                 if colinfo.old ~= colinfo.new and colname ~= ID then
                     coltype = self.own_table:get_column(colname)
 
@@ -965,7 +965,7 @@ function Query(own_table, data)
                         local colvalue = escapeValue(self.own_table, colname, colinfo.new)
                         set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
 
-                        table.insert(equation_for_set, set)
+                        equation_for_set[#equation_for_set + 1] = set
                     else
                         BACKTRACE(WARNING, "Can't update value for column `" ..
                                            Type.to.str(colname) .. "`")
@@ -973,11 +973,11 @@ function Query(own_table, data)
                 end
             end
 
-            set = table.join(equation_for_set, ",")
+            set = _tableJoin(equation_for_set, ",")
 
             if set ~= "" then
                 update = update .. " SET " .. set .. "\n\t    WHERE `" .. ID .. "` = " .. self.id
-                db:execute(update)
+                dbInstance:execute(update)
             end
         end,
 
@@ -1002,7 +1002,7 @@ function Query(own_table, data)
                 delete = "DELETE FROM `" .. self.own_table.__tablename__ .. "` "
                 delete = delete .. "WHERE `" .. ID .. "` = " .. self.id
 
-                db:execute(delete)
+                dbInstance:execute(delete)
             end
             self._data = {}
         end
@@ -1011,7 +1011,7 @@ function Query(own_table, data)
     if data then
         local current_table
 
-        for colname, colvalue in pairs(data) do
+        for colname, colvalue in tablePairs(data) do
             if query.own_table:has_column(colname) then
                 colvalue = query.own_table:get_column(colname)
                                           .field.to_type(colvalue)
@@ -1080,7 +1080,7 @@ function QueryList(own_table, rows)
         end,
 
         __call = function (self)
-            return pairs(self._stack)
+            return tablePairs(self._stack)
         end,
 
         ------------------------------------------------
@@ -1096,7 +1096,7 @@ function QueryList(own_table, rows)
         ------------------------------------------------
         with_id = function (self, id)
             if Type.is.int(id) then
-                for _, query in pairs(self) do
+                for _, query in tablePairs(self) do
                     if query.id == id then
                         return query
                     end
@@ -1108,7 +1108,7 @@ function QueryList(own_table, rows)
 
         -- Add new Query Instance to stack
         add = function (self, QueryInstance)
-            table.insert(self._stack, QueryInstance)
+            self._stack[#self._stack + 1] = QueryInstance
         end,
 
         -- Get count of values in stack
@@ -1118,7 +1118,7 @@ function QueryList(own_table, rows)
 
         -- Remove from database all elements from stack
         delete = function (self)
-            for _, query in pairs(self._stack) do
+            for _, query in tablePairs(self._stack) do
                 query:delete()
             end
 
@@ -1130,11 +1130,11 @@ function QueryList(own_table, rows)
                                __len = _query_list.__len,
                                __call = _query_list.__call})
 
-    for _, row in pairs(rows) do
+    for _, row in tablePairs(rows) do
         current_query = _query_list:with_id(Type.to.number(row.id))
 
         if current_query then
-            for key, value in pairs(row) do
+            for key, value in tablePairs(row) do
                 if Type.is.table(value)
                 and current_query._readonly[key .. "_all"] then
                     current_query._readonly[key .. "_all"]:add(
@@ -1196,7 +1196,7 @@ Type = {
 ------------------------------------------------------------------------------
 
 
-local Field = {
+local FieldBase = {
     -- Table column type
     __type__ = "varchar",
 
@@ -1301,7 +1301,7 @@ local Field = {
                 -- directly will result in a reference to the original table, thus all
                 -- instances of the same field type would have the same settings table.
                 --
-                for index, setting in pairs(new_self.field.settings) do
+                for index, setting in tablePairs(new_self.field.settings) do
                   new_self.settings[index] = setting
                 end
 
@@ -1344,15 +1344,15 @@ local function save_as_str(str)
     return "'" .. str .. "'"
 end
 
-local field = {}
+local Field = {}
 
 -- The "Field" class will be used to search a table index that the "field" class doesn't have.
 -- This way field:register() will call the same function like Field:register() and the register
 -- function has access to the default values for the field configuration.
-setmetatable(field, {__index = Field});
+setmetatable(Field, {__index = FieldBase});
 
 
-field.PrimaryField = Field:register({
+Field.PrimaryField = FieldBase:register({
     __type__ = "integer",
     validator = Type.is.int,
     settings = {
@@ -1363,29 +1363,29 @@ field.PrimaryField = Field:register({
     to_type = Type.to.number
 })
 
-field.IntegerField = Field:register({
+Field.IntegerField = FieldBase:register({
     __type__ = "integer",
     validator = Type.is.int,
     to_type = Type.to.number
 })
 
-field.CharField = Field:register({
+Field.CharField = FieldBase:register({
     __type__ = "varchar",
     validator = Type.is.str,
     as = save_as_str
 })
 
-field.TextField = Field:register({
+Field.TextField = FieldBase:register({
     __type__ = "text",
     validator = Type.is.str,
     as = save_as_str
 })
 
-field.BooleandField = Field:register({
+Field.BooleandField = FieldBase:register({
     __type__ = "bool"
 })
 
-field.DateTimeField = Field:register({
+Field.DateTimeField = FieldBase:register({
     __type__ = "integer",
     validator = function (value)
         if (Type.is.table(value) and value.isdst ~= nil)
@@ -1401,7 +1401,7 @@ field.DateTimeField = Field:register({
     end
 })
 
-field.ForeignKey = Field:register({
+Field.ForeignKey = FieldBase:register({
     __type__ = "integer",
     settings = {
         null = true,
@@ -1409,8 +1409,6 @@ field.ForeignKey = Field:register({
     },
     to_type = Type.to.number
 })
-
-local fields = field
 
 --[[orm.class.table]]
 ------------------------------------------------------------------------------
@@ -1446,7 +1444,7 @@ function Table:create_table(table_instance)
     local column_query
     local result
 
-    for _, coltype in pairs(columns) do
+    for _, coltype in tablePairs(columns) do
         column_query = "\n     `" .. coltype.name .. "` " .. coltype:_create_type()
 
         if counter ~= 0 then
@@ -1457,7 +1455,7 @@ function Table:create_table(table_instance)
         counter = counter + 1
     end
 
-    for _, coltype in pairs(foreign_keys) do
+    for _, coltype in tablePairs(foreign_keys) do
         create_query = create_query .. ",\n     FOREIGN KEY(`" ..
                        coltype.name .. "`)" .. " REFERENCES `" ..
                        coltype.settings.to.__tablename__ ..
@@ -1466,7 +1464,7 @@ function Table:create_table(table_instance)
 
     create_query = create_query .. "\n)"
 
-    db:execute(create_query)
+    dbInstance:execute(create_query)
 end
 
 -- Create new table instance
@@ -1488,21 +1486,21 @@ function Table.new(self, args)
     local customColumnCreateOrder = args.__columnCreateOrder__;
     args.__columnCreateOrder__ = nil;
 
+    local tbl = self.__columnCreateOrder__    
     if (customColumnCreateOrder) then
       for _, colname in ipairs(customColumnCreateOrder) do
-
         -- Add only existing columns to the column create order
         if (args[colname]) then
-          table.insert(self.__columnCreateOrder__, colname);
+          tbl[#tbl + 1] = colname
         end
       end
     end
 
-    for colname, coltype in pairs(args) do
+    for colname, coltype in tablePairs(args) do
 
       -- Add the columns that are defined but missing from the column create order
-      if (not table.has_value(self.__columnCreateOrder__, colname)) then
-        table.insert(self.__columnCreateOrder__, colname);
+      if (not _tableHasValue(self.__columnCreateOrder__, colname)) then
+        tbl[#tbl + 1] = colname
       end
     end
 
@@ -1575,7 +1573,7 @@ function Table.new(self, args)
         -- @return {boolean} get true if column exist
         -----------------------------------------
         has_column = function (self, colname)
-            for _, table_column in pairs(self.__colnames) do
+            for _, table_column in tablePairs(self.__colnames) do
                 if table_column.name == colname then
                     return true
                 end
@@ -1592,7 +1590,7 @@ function Table.new(self, args)
         -- @return {table} get column instance if column exist
         -----------------------------------------
         get_column = function (self, colname)
-            for _, table_column in pairs(self.__colnames) do
+            for _, table_column in tablePairs(self.__colnames) do
                 if table_column.name == colname then
                     return table_column
                 end
@@ -1604,7 +1602,10 @@ function Table.new(self, args)
     }
 
     -- Add default column 'id'
-    args.id = fields.PrimaryField({auto_increment = true})
+    args.id = Field.PrimaryField({auto_increment = true})
+
+    local colTbl = Table_instance.__colnames
+    local keyTbl = Table_instance.__foreign_keys
 
     -- copy column arguments to new table instance
     for _, colname in ipairs(self.__columnCreateOrder__) do
@@ -1613,10 +1614,10 @@ function Table.new(self, args)
         coltype.name = colname
         coltype.__table__ = Table_instance
 
-        table.insert(Table_instance.__colnames, coltype)
+        colTbl[#colTbl + 1] = coltype
 
         if coltype.settings.foreign_key then
-            table.insert(Table_instance.__foreign_keys, coltype)
+            keyTbl[#keyTbl + 1] = coltype
         end
     end
 
@@ -1666,25 +1667,25 @@ DB = {
     password = DB.password or nil
 }
 
-local sql, _connect
+local SqlEnv, _connect
 
 -- Get database by settings
 if DB.type == SQLITE then
     local luasql = require("luasql.sqlite3")
-    sql = luasql.sqlite3()
-    _connect = sql:connect(DB.name)
+    SqlEnv = luasql.sqlite3()
+    _connect = SqlEnv:connect(DB.name)
 
 elseif DB.type == MYSQL then
     local luasql = require("luasql.mysql")
-    sql = luasql.mysql()
+    SqlEnv = luasql.mysql()
     print(DB.name, DB.username, DB.password, DB.host, DB.port)
-    _connect = sql:connect(DB.name, DB.username, DB.password, DB.host, DB.port)
+    _connect = SqlEnv:connect(DB.name, DB.username, DB.password, DB.host, DB.port)
 
 elseif DB.type == POSTGRESQL then
     local luasql = require("luasql.postgres")
-    sql = luasql.postgres()
+    SqlEnv = luasql.postgres()
     print(DB.name, DB.username, DB.password, DB.host, DB.port)
-    _connect = sql:connect(DB.name, DB.username, DB.password, DB.host, DB.port)
+    _connect = SqlEnv:connect(DB.name, DB.username, DB.password, DB.host, DB.port)
 
 else
     BACKTRACE(ERROR, "Database type not suported '" .. tostring(DB.type) .. "'")
@@ -1709,7 +1710,7 @@ end
 ------------------------------------------------------------------------------
 
 -- Database settings
-db = {
+dbInstance = {
     -- Database connect instance
     connect = _connect,
 
@@ -1744,8 +1745,8 @@ db = {
             row = _cursor:fetch({}, "a")
 
             while row do
-                for colname, value in pairs(row) do
-                    current_table, colname = string.divided_into(colname, "_")
+                for colname, value in tablePairs(row) do
+                    current_table, colname = _divided_into(colname, "_")
 
                     if current_table == own_table.__tablename__ then
                         current_row[colname] = value
@@ -1758,7 +1759,7 @@ db = {
                     end
                 end
 
-                table.insert(data, current_row)
+                data[#data + 1] = current_row
 
                 current_row = {}
                 row = _cursor:fetch({}, "a")
@@ -1770,5 +1771,5 @@ db = {
     end
 }
 
-return { Table, fields, pairs }
+return { Table, Field, tablePairs }
 
