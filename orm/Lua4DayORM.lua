@@ -25,30 +25,11 @@ local DEBUG = 'd'
 
 local _pairs = pairs
 
-local function tablePairs(tbl)
+local function tpairs(tbl)
     if tbl.__classname__ == QUERY_LIST then
         return tbl()
     else
         return _pairs(tbl)
-    end
-end
-
-local function BACKTRACE(tracetype, message)
-    if DB.backtrace then
-        if tracetype == ERROR then
-            print("[SQL:Error] " .. message)
-            os.exit()
-
-        elseif tracetype == WARNING then
-            print("[SQL:Warning] " .. message)
-
-        elseif tracetype == INFO then
-            print("[SQL:Info] " .. message)
-        end
-    end
-
-    if DB.DEBUG and tracetype == DEBUG then
-        print("[SQL:Debug] " .. message)
     end
 end
 
@@ -125,7 +106,7 @@ local function _tableHasValue(array, value)
         value = value.colname
     end
 
-    for _, array_value  in tablePairs(array) do
+    for _, array_value  in tpairs(array) do
         if array_value == value then
             return true
         end
@@ -140,7 +121,7 @@ local function _tableJoin(array, separator)
         separator = ","
     end
 
-    for _, value in tablePairs(array) do
+    for _, value in tpairs(array) do
         if counter ~= 0 then
             value = separator .. value
         end
@@ -184,6 +165,24 @@ end
 ]]
 ------------------------------------------------------------------------------
 
+local function BACKTRACE(tracetype, message)
+    if DB.backtrace then
+        if tracetype == ERROR then
+            print("[SQL:Error] " .. message)
+            os.exit()
+
+        elseif tracetype == WARNING then
+            print("[SQL:Warning] " .. message)
+
+        elseif tracetype == INFO then
+            print("[SQL:Info] " .. message)
+        end
+    end
+
+    if DB.DEBUG and tracetype == DEBUG then
+        print("[SQL:Debug] " .. message)
+    end
+end
 
 local All_Tables = {}
 
@@ -341,7 +340,7 @@ local Select = function(own_table)
                     table_column = self.own_table:get_column(colname)
                     _in = {}
 
-                    for counter, val in tablePairs(value) do
+                    for counter, val in tpairs(value) do
                         _in[#_in + 1] = table_column.field.as(val)
                     end
 
@@ -398,7 +397,7 @@ local Select = function(own_table)
             local result = {}
             local parsed_column
 
-            for _, col in tablePairs(list_of_cols) do
+            for _, col in tpairs(list_of_cols) do
                 if Type.is.table(col) and col.__classtype__ == AGGREGATOR then
                     col.__table__ = self.own_table.__tablename__
                     result[#result + 1] = col
@@ -426,7 +425,7 @@ local Select = function(own_table)
             condition = condition .. start_with
 
             -- TODO: add OR
-            for colname, value in tablePairs(rules) do
+            for colname, value in tpairs(rules) do
                 _equation = self:_build_equation(colname, value)
 
                 if counter ~= 0 then
@@ -441,7 +440,7 @@ local Select = function(own_table)
         end,
 
         _has_foreign_key_table = function (self, left_table, right_table)
-            for _, key in tablePairs(left_table.__foreign_keys) do
+            for _, key in tpairs(left_table.__foreign_keys) do
                 if key.settings.to == right_table then
                     return true
                 end
@@ -457,7 +456,7 @@ local Select = function(own_table)
             local parsed_column, _
             local tablename
 
-            for _, value in tablePairs(self._rules.columns.join) do
+            for _, value in tpairs(self._rules.columns.join) do
                 left_table = value[1]
                 right_table = value[2]
                 mode = value[3]
@@ -487,7 +486,7 @@ local Select = function(own_table)
                     BACKTRACE(WARNING, "Not valid tables links")
                 end
 
-                for _, key in tablePairs(left_table.__foreign_keys) do
+                for _, key in tpairs(left_table.__foreign_keys) do
                     if key.settings.to == right_table then
                         colname = key.name
 
@@ -523,7 +522,7 @@ local Select = function(own_table)
             end
 
             -- get current column
-            for _, column in tablePairs(own_table.__colnames) do
+            for _, column in tpairs(own_table.__colnames) do
                 colname, colname_as = own_table:column(column.name)
                 include[#include + 1] = colname .. " AS " .. colname_as
             end
@@ -553,7 +552,7 @@ local Select = function(own_table)
                 local join_tables = {}
                 local left_table, right_table
 
-                for _, values in tablePairs(self._rules.columns.join) do
+                for _, values in tpairs(self._rules.columns.join) do
                     left_table = values[1]
                     right_table = values[2]
 
@@ -576,7 +575,7 @@ local Select = function(own_table)
                 local aggregators = {}
                 local aggregator, as
 
-                for _, value in tablePairs(self._rules.columns.include) do
+                for _, value in tpairs(self._rules.columns.include) do
                     _, as = own_table:column(value.as)
                     aggregators[#aggregators + 1] = value[1] .. " AS " .. as
                 end
@@ -640,7 +639,7 @@ local Select = function(own_table)
                 col_table[#col_table + 1] = colname
 
             elseif Type.is.table(colname) then
-                for _, column in tablePairs(colname) do
+                for _, column in tpairs(colname) do
                     if (Type.is.table(column) and column.__classtype__ == AGGREGATOR
                     and self.own_table:has_column(column.colname))
                     or self.own_table:has_column(column) then
@@ -662,7 +661,7 @@ local Select = function(own_table)
         include = function (self, column_list)
             if Type.is.table(column_list) then
                 local tbl = self._rules.columns.include
-                for _, value in tablePairs(column_list) do
+                for _, value in tpairs(column_list) do
                     if Type.is.table(value) and value.as and value[1]
                     and value[1].__classtype__ == AGGREGATOR then
                         tbl[#tbl + 1] = value
@@ -726,7 +725,7 @@ local Select = function(own_table)
 
         -- SQL Where query rules
         where = function (self, args)
-            for col, value in tablePairs(args) do
+            for col, value in tpairs(args) do
                 self._rules.where[col] = value
             end
 
@@ -769,7 +768,7 @@ local Select = function(own_table)
 
         -- Having
         having = function (self, args)
-            for col, value in tablePairs(args) do
+            for col, value in tpairs(args) do
                 self._rules.having[col] = value
             end
 
@@ -788,7 +787,7 @@ local Select = function(own_table)
                 local _set_tbl = {}
                 local i=1
 
-                for colname, new_value in tablePairs(data) do
+                for colname, new_value in tpairs(data) do
                     coltype = self.own_table:get_column(colname)
 
                     if coltype and coltype.field.validator(new_value) then
@@ -949,7 +948,7 @@ function Query(own_table, data)
             local value
             local colname
 
-            for _, table_column in tablePairs(self.own_table.__colnames) do
+            for _, table_column in tpairs(self.own_table.__colnames) do
                 colname = table_column.name
 
                 if colname ~= ID then
@@ -1005,7 +1004,7 @@ function Query(own_table, data)
             local equation_for_set = {}
             local set, coltype
 
-            for colname, colinfo in tablePairs(self._data) do
+            for colname, colinfo in tpairs(self._data) do
                 if colinfo.old ~= colinfo.new and colname ~= ID then
                     coltype = self.own_table:get_column(colname)
 
@@ -1060,7 +1059,7 @@ function Query(own_table, data)
     if data then
         local current_table
 
-        for colname, colvalue in tablePairs(data) do
+        for colname, colvalue in tpairs(data) do
             if query.own_table:has_column(colname) then
                 colvalue = query.own_table:get_column(colname)
                                           .field.to_type(colvalue)
@@ -1129,7 +1128,7 @@ function QueryList(own_table, rows)
         end,
 
         __call = function (self)
-            return tablePairs(self._stack)
+            return tpairs(self._stack)
         end,
 
         ------------------------------------------------
@@ -1145,7 +1144,7 @@ function QueryList(own_table, rows)
         ------------------------------------------------
         with_id = function (self, id)
             if Type.is.int(id) then
-                for _, query in tablePairs(self) do
+                for _, query in tpairs(self) do
                     if query.id == id then
                         return query
                     end
@@ -1167,7 +1166,7 @@ function QueryList(own_table, rows)
 
         -- Remove from database all elements from stack
         delete = function (self)
-            for _, query in tablePairs(self._stack) do
+            for _, query in tpairs(self._stack) do
                 query:delete()
             end
 
@@ -1179,11 +1178,11 @@ function QueryList(own_table, rows)
                                __len = _query_list.__len,
                                __call = _query_list.__call})
 
-    for _, row in tablePairs(rows) do
+    for _, row in tpairs(rows) do
         current_query = _query_list:with_id(Type.to.number(row.id))
 
         if current_query then
-            for key, value in tablePairs(row) do
+            for key, value in tpairs(row) do
                 if Type.is.table(value)
                 and current_query._readonly[key .. "_all"] then
                     current_query._readonly[key .. "_all"]:add(
@@ -1309,7 +1308,7 @@ local FieldBase = {
                 -- directly will result in a reference to the original table, thus all
                 -- instances of the same field type would have the same settings table.
                 --
-                for index, setting in tablePairs(new_self.field.settings) do
+                for index, setting in tpairs(new_self.field.settings) do
                   new_self.settings[index] = setting
                 end
 
@@ -1452,7 +1451,7 @@ function Table:create_table(table_instance)
     local column_query
     local result
 
-    for _, coltype in tablePairs(columns) do
+    for _, coltype in tpairs(columns) do
         column_query = "\n     `" .. coltype.name .. "` " .. coltype:_create_type()
 
         if counter ~= 0 then
@@ -1463,7 +1462,7 @@ function Table:create_table(table_instance)
         counter = counter + 1
     end
 
-    for _, coltype in tablePairs(foreign_keys) do
+    for _, coltype in tpairs(foreign_keys) do
         create_query = create_query .. ",\n     FOREIGN KEY(`" ..
                        coltype.name .. "`)" .. " REFERENCES `" ..
                        coltype.settings.to.__tablename__ ..
@@ -1504,7 +1503,7 @@ function Table.new(self, args)
       end
     end
 
-    for colname, coltype in tablePairs(args) do
+    for colname, coltype in tpairs(args) do
 
       -- Add the columns that are defined but missing from the column create order
       if (not _tableHasValue(self.__columnCreateOrder__, colname)) then
@@ -1581,7 +1580,7 @@ function Table.new(self, args)
         -- @return {boolean} get true if column exist
         -----------------------------------------
         has_column = function (self, colname)
-            for _, table_column in tablePairs(self.__colnames) do
+            for _, table_column in tpairs(self.__colnames) do
                 if table_column.name == colname then
                     return true
                 end
@@ -1598,7 +1597,7 @@ function Table.new(self, args)
         -- @return {table} get column instance if column exist
         -----------------------------------------
         get_column = function (self, colname)
-            for _, table_column in tablePairs(self.__colnames) do
+            for _, table_column in tpairs(self.__colnames) do
                 if table_column.name == colname then
                     return table_column
                 end
@@ -1753,7 +1752,7 @@ dbInstance = {
             row = _cursor:fetch({}, "a")
 
             while row do
-                for colname, value in tablePairs(row) do
+                for colname, value in tpairs(row) do
                     current_table, colname = _divided_into(colname, "_")
 
                     if current_table == own_table.__tablename__ then
@@ -1779,5 +1778,5 @@ dbInstance = {
     end
 }
 
-return { Table, Field, tablePairs, OrderBy }
+return { Table, Field, tpairs, OrderBy }
 

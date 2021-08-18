@@ -13,21 +13,21 @@ DB = {
 
 -- local Table = require("orm.model")
 -- local fields = require("orm.tools.fields")
-local Table, fields, tablePairs, Or
+local Table, Field, tpairs, Or
 do
     local a= require("orm.Lua4DayORM")
-    Table, fields, tablePairs, Or = a[1], a[2], a[3], a[4]
+    Table, Field, tpairs, Or = a[1], a[2], a[3], a[4]
 end
 
 ----------------------------- CREATE TABLE --------------------------------
 
 local User = Table({
     __tablename__ = "user",
-    username = fields.CharField({max_length = 100, unique = true}),
-    password = fields.CharField({max_length = 50, unique = true}),
-    age = fields.IntegerField({max_length = 2, null = true}),
-    job = fields.CharField({max_length = 50, null = true}),
-    time_create = fields.DateTimeField({null = true})
+    username = Field.CharField({max_length = 100, unique = true}),
+    password = Field.CharField({max_length = 50, unique = true}),
+    age = Field.IntegerField({max_length = 2, null = true}),
+    job = Field.CharField({max_length = 50, null = true}),
+    time_create = Field.DateTimeField({null = true})
 })
 
 ----------------------------- CREATE DATA --------------------------------
@@ -147,9 +147,9 @@ user = User.get:where({age__lt = 30,
 
 local News = Table({
     __tablename__ = "news",
-    title = fields.CharField({max_length = 100, unique = false, null = false}),
-    text = fields.TextField({null = true}),
-    create_user_id = fields.ForeignKey({to = User})
+    title = Field.CharField({max_length = 100, unique = false, null = false}),
+    text = Field.TextField({null = true}),
+    create_user_id = Field.ForeignKey({to = User})
 })
 
 local user = User.get:first()
@@ -168,7 +168,7 @@ local user = User.get:join(News):all()[1]
 print("User " .. user.id .. " has " .. user.news_all:count() .. " news")
 -- User 1 has 2 news
 
-for _, user_news in tablePairs(user.news_all) do
+for _, user_news in tpairs(user.news_all) do
     print(user_news.title)
 end
 -- Some news
@@ -177,7 +177,7 @@ end
 
 ----------------------------- CREATE NEW FIRLD TYPE --------------------------------
 
-fields.EmailField = fields:register({
+Field.EmailField = Field:register({
     __type__ = "varchar",
     settings = {
         max_length = 100
@@ -195,8 +195,8 @@ fields.EmailField = fields:register({
 
 local UserEmails = Table({
     __tablename__ = "user_emails",
-    email = fields.EmailField(),
-    user_id = fields.ForeignKey({ to = User })
+    email = Field.EmailField(),
+    user_id = Field.ForeignKey({ to = User })
 })
 
 local user_email = UserEmails({
