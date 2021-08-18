@@ -1,17 +1,38 @@
+
+non global variable version Lua4DayORM from [itdxer/4DaysORM](https://github.com/itdxer/4DaysORM/)
+
 # Lua 4Days ORM 10 minutes tutorial #
 
 ## Database configuration ##
 
-Before the beginning you should add some simple settings to your database configuration. You must create some global variable `DB`:
+first get DatabaseClass after require:
 
 ```lua
-DB = {}
+local DBClass = require("Lua4DayORM")
 ```
+
+then create instance:
+
+```lua
+local instance = DBClass.new({
+	DEBUG = true,
+	TRACE = true,
+	type = "sqlite3",
+	path = "database.db",
+})
+```
+and you can disconnect in the end:
+
+```lua
+instance:close()
+```
+
+options below:
 
 **Development configurations:**
 
-1. `new` - if this value is `true`, then previous database was removed and new  was created (*`true` by default*).
-2. `backtrace` - if this value is `true`, than you will be able to see in console all Warnings, Errors and Information messages (*`true` by default*).
+1. `newtable` - if this value is `true`, then previous database was removed and new  was created (*`true` by default*).
+2. `TRACE` - if this value is `true`, than you will be able to see in console all Warnings, Errors and Information messages (*`true` by default*).
 3. `DEBUG` - if this value is `true`, you will be able to see in console all SQL queries (*`true` by default*).
 
 **Database configurations**
@@ -19,7 +40,7 @@ DB = {}
 1. `type` - by default `"sqlite3"`. Also it can be:
     - `"mysql"` - for MySQL database
     - `"postgresql"` - for PostgreSQL database (*implemented soon*)
-2. `name` - this is a path to database file for `"sqlite3"`. For other databases this value contains database name. (*by default `"database.db"`*)
+2. `path` - this is a path to database file for `"sqlite3"`. For other databases this value contains database name. (*by default `"database.db"`*)
 3. `username` - database user name (*by default `nil`*)
 4. `password` - database password (*by default `nil`*)
 5. `host` - database host (*by default `nil`*)
@@ -29,11 +50,10 @@ DB = {}
 ----------
 
 
-After setting configurations you can add 2 modules import to your file
+then we get tools to create Table, Field, and iterate them
 
 ```lua
-local Table = require("orm.model")
-local fields = require("orm.tools.fields")
+local Table, Field, OrderBy, tablePairs = instance.Table, instance.Field, instance.OrderBy, instance.tablePairs
 ```
 
 ## Create table ##
@@ -42,11 +62,11 @@ local fields = require("orm.tools.fields")
 ```lua
 local User = Table({
     __tablename__ = "user",
-    username = fields.CharField({max_length = 100, unique = true}),
-    password = fields.CharField({max_length = 50, unique = true}),
-    age = fields.IntegerField({max_length = 2, null = true}),
-    job = fields.CharField({max_length = 50, null = true}),
-    time_create = fields.DateTimeField({null = true})
+    username = Field.CharField({max_length = 100, unique = true}),
+    password = Field.CharField({max_length = 50, unique = true}),
+    age = Field.IntegerField({max_length = 2, null = true}),
+    job = Field.CharField({max_length = 50, null = true}),
+    time_create = Field.DateTimeField({null = true})
 })
 ```
 
@@ -229,7 +249,7 @@ Also you can sort your result by order. We want to sort users from the oldest to
 
 
 ```lua
-users = User.get:order_by({desc('age')}):all()
+users = User.get:order_by({OrderBy.DESC('age')}):all()
 print("First user id: " .. users[1].id)
 -- First user id: 3
 ```
@@ -237,7 +257,7 @@ print("First user id: " .. users[1].id)
 But we have 2 users with age 44. We can order them by name.
 
 ```lua
-users = User.get:order_by({desc('age'), asc('username')}):all()
+users = User.get:order_by({OrderBy.DESC('age'), OrderBy.ASC('username')}):all()
 ```
     
 You can order your table query by other parameters too.
@@ -347,7 +367,7 @@ local user = User.get:join(News):first()
 print("User " .. user.id .. " has " .. user.news_all:count() .. " news")
 -- User 1 has 2 news
     
-for _, user_news in pairs(user.news_all) do
+for _, user_news in tablePairs(user.news_all) do
     print(user_news.title)
 end
 -- Some news
