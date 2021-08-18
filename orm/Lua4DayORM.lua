@@ -25,15 +25,6 @@ local DEBUG = 'd'
 
 local _pairs = pairs
 
-local All_Tables = {}
-
-local Type
-
-local dbInstance
-
-local QueryList
-local Query
-
 local function tablePairs(tbl)
     if tbl.__classname__ == QUERY_LIST then
         return tbl()
@@ -86,6 +77,48 @@ end
 --         end
 --     end
 -- end
+
+--[[orm.class.type]]
+------------------------------------------------------------------------------
+
+local Type = {
+    -- Check value for correct type
+    ----------------------------------
+    -- @value {any type} checked value
+    --
+    -- @return {boolean} get true if type is correct
+    ----------------------------------
+    is = {
+        int = function (value)
+            if type(value) == "number" then
+                integer, fractional = math.modf(value)
+                return fractional == 0
+            end
+        end,
+
+        number = function (value)
+            return type(value) == "number"
+        end,
+
+        str = function (value)
+            return type(value) == "string"
+        end,
+
+        table = function (value)
+            return type(value) == "table"
+        end,
+    },
+
+    to = {
+        number = function (value)
+            return tonumber(value)
+        end,
+
+        str = function (value)
+            return tostring(value)
+        end
+    }
+}
 
 local function _tableHasValue(array, value)
     if Type.is.table(value) and value.colname then
@@ -146,6 +179,20 @@ local function Property(args)
     end
 end
 
+--[[
+    local names with specific DB, dbInstance, Table
+]]
+------------------------------------------------------------------------------
+
+
+local All_Tables = {}
+
+local dbInstance
+
+local QueryList
+local Query
+
+
 --[[orm.tools.func]]
 ------------------------------------------------------------------------------
 
@@ -188,7 +235,7 @@ OrderBy.SUM = Property({
 })
 
 -- Escape text values to prevent sql injection
-local function escapeValue(own_table, colname, colvalue)
+local function _escapeValue(own_table, colname, colvalue)
 
   local coltype = own_table:get_column(colname)
   if coltype and coltype.settings.escape_value then
@@ -331,7 +378,7 @@ local Select = function(own_table)
                     conditionPrepend = " = "
                 end
 
-                value = escapeValue(self.own_table, colname, value)
+                value = _escapeValue(self.own_table, colname, value)
                 table_column = self.own_table:get_column(colname)
                 result = conditionPrepend .. table_column.field.as(value)
 
@@ -912,7 +959,7 @@ function Query(own_table, data)
                         value = self[colname]
 
                         if table_column.field.validator(value) then
-                            value = escapeValue(self.own_table, colname, value)
+                            value = _escapeValue(self.own_table, colname, value)
                             value = table_column.field.as(value)
                         else
                             BACKTRACE(WARNING, "Wrong type for table '" ..
@@ -964,7 +1011,7 @@ function Query(own_table, data)
 
                     if coltype and coltype.field.validator(colinfo.new) then
 
-                        local colvalue = escapeValue(self.own_table, colname, colinfo.new)
+                        local colvalue = _escapeValue(self.own_table, colname, colinfo.new)
                         set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
 
                         equation_for_set[#equation_for_set + 1] = set
@@ -1152,47 +1199,6 @@ function QueryList(own_table, rows)
     return _query_list
 end
 
---[[orm.class.type]]
-------------------------------------------------------------------------------
-
-Type = {
-    -- Check value for correct type
-    ----------------------------------
-    -- @value {any type} checked value
-    --
-    -- @return {boolean} get true if type is correct
-    ----------------------------------
-    is = {
-        int = function (value)
-            if type(value) == "number" then
-                integer, fractional = math.modf(value)
-                return fractional == 0
-            end
-        end,
-
-        number = function (value)
-            return type(value) == "number"
-        end,
-
-        str = function (value)
-            return type(value) == "string"
-        end,
-
-        table = function (value)
-            return type(value) == "table"
-        end,
-    },
-
-    to = {
-        number = function (value)
-            return tonumber(value)
-        end,
-
-        str = function (value)
-            return tostring(value)
-        end
-    }
-}
 
 --[[orm.class.field]]
 ------------------------------------------------------------------------------
