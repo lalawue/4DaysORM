@@ -1,23 +1,22 @@
 
 ----------------------------- ORM SETTINGS --------------------------------
-
-DB = {
-    DEBUG = true,
-    new = true,
-    backtrace = true,
-    name = "database.db",
+local config = {
+    newtable = true,
+    path = "database.db",
     type = "sqlite3",
+    -- DEBUG = true,
+    -- TRACE = true
 }
 
 ----------------------------- REQUIRE --------------------------------
 
 -- local Table = require("orm.model")
 -- local fields = require("orm.tools.fields")
-local Table, Field, tpairs, Or
-do
-    local a= require("orm.Lua4DayORM")
-    Table, Field, tpairs, Or = a[1], a[2], a[3], a[4]
-end
+local DBClass = require("Lua4DayORMAllInOne")
+
+local instance = DBClass.new(config)
+
+local Table, Field, tpairs, Or = instance.Table, instance.Field, instance.tablePairs, instance.OrderBy
 
 ----------------------------- CREATE TABLE --------------------------------
 
@@ -221,3 +220,5 @@ user_email:save()
 user_email.email = "valid@email.com"
 user_email:save()
 -- Update!
+
+instance:close()
