@@ -13,10 +13,10 @@ DB = {
 
 -- local Table = require("orm.model")
 -- local fields = require("orm.tools.fields")
-local Table, fields
+local Table, fields, tablePairs
 do
     local a= require("orm.Lua4DayORM")
-    Table, fields = a[1], a[2]
+    Table, fields, tablePairs = a[1], a[2], a[3]
 end
 
 ----------------------------- CREATE TABLE --------------------------------
@@ -168,7 +168,7 @@ local user = User.get:join(News):all()[1]
 print("User " .. user.id .. " has " .. user.news_all:count() .. " news")
 -- User 1 has 2 news
 
-for _, user_news in pairs(user.news_all) do
+for _, user_news in tablePairs(user.news_all) do
     print(user_news.title)
 end
 -- Some news

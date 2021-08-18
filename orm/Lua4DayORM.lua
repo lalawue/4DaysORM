@@ -2,27 +2,47 @@
 --[[ orm.class.global ]]
 ------------------------------------------------------------------------------
 
--- Backtrace types
-ERROR = 'e'
-WARNING = 'w'
-INFO = 'i'
-DEBUG = 'd'
 
-All_Tables = {}
+------------------------------------------------------------------------------
+--                                Constants                                 --
+------------------------------------------------------------------------------
+-- Global
+local ID = "id"
+local AGGREGATOR = "aggregator"
+local QUERY_LIST = "query_list"
+
+-- databases types
+local SQLITE = "sqlite3"
+local ORACLE = "oracle"
+local MYSQL = "mysql"
+local POSTGRESQL = "postgresql"
+
+-- Backtrace types
+local ERROR = 'e'
+local WARNING = 'w'
+local INFO = 'i'
+local DEBUG = 'd'
+
+local All_Tables = {}
 
 local Type
 
+local db
+
+local QueryList
+local Query
+
 local _pairs = pairs
 
-function pairs(Table)
-    if Table.__classname__ == QUERY_LIST then
-        return Table()
+local function pairs(tbl)
+    if tbl.__classname__ == QUERY_LIST then
+        return tbl()
     else
-        return _pairs(Table)
+        return _pairs(tbl)
     end
 end
 
-function BACKTRACE(tracetype, message)
+local function BACKTRACE(tracetype, message)
     if DB.backtrace then
         if tracetype == ERROR then
             print("[SQL:Error] " .. message)
@@ -166,7 +186,7 @@ _G.SUM = Property({
 })
 
 -- Escape text values to prevent sql injection
-function _G.escapeValue(own_table, colname, colvalue)
+local function escapeValue(own_table, colname, colvalue)
 
   local coltype = own_table:get_column(colname)
   if coltype and coltype.settings.escape_value then
@@ -309,7 +329,7 @@ local Select = function(own_table)
                     conditionPrepend = " = "
                 end
 
-                value = _G.escapeValue(self.own_table, colname, value)
+                value = escapeValue(self.own_table, colname, value)
                 table_column = self.own_table:get_column(colname)
                 result = conditionPrepend .. table_column.field.as(value)
 
@@ -735,6 +755,7 @@ local Select = function(own_table)
                 end
 
                 -- Build WHERE
+                local _where
                 if next(self._rules.where) then
                     _where = self:_condition(self._rules.where, "\nWHERE")
                 else
@@ -889,7 +910,7 @@ function Query(own_table, data)
                         value = self[colname]
 
                         if table_column.field.validator(value) then
-                            value = _G.escapeValue(self.own_table, colname, value)
+                            value = escapeValue(self.own_table, colname, value)
                             value = table_column.field.as(value)
                         else
                             BACKTRACE(WARNING, "Wrong type for table '" ..
@@ -941,7 +962,7 @@ function Query(own_table, data)
 
                     if coltype and coltype.field.validator(colinfo.new) then
 
-                        local colvalue = _G.escapeValue(self.own_table, colname, colinfo.new)
+                        local colvalue = escapeValue(self.own_table, colname, colinfo.new)
                         set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
 
                         table.insert(equation_for_set, set)
@@ -999,8 +1020,8 @@ function Query(own_table, data)
                     old = colvalue
                 }
             else
-                if _G.All_Tables[colname] then
-                    current_table = _G.All_Tables[colname]
+                if All_Tables[colname] then
+                    current_table = All_Tables[colname]
                     colvalue = Query(current_table, colvalue)
 
                     query._readonly[colname .. "_all"] = QueryList(current_table, {})
@@ -1117,7 +1138,7 @@ function QueryList(own_table, rows)
                 if Type.is.table(value)
                 and current_query._readonly[key .. "_all"] then
                     current_query._readonly[key .. "_all"]:add(
-                        Query(_G.All_Tables[key], value)
+                        Query(All_Tables[key], value)
                     )
                 end
             end
@@ -1604,7 +1625,7 @@ function Table.new(self, args)
         __index = Table_instance.__index
     })
 
-    _G.All_Tables[self.__tablename__] = Table_instance
+    All_Tables[self.__tablename__] = Table_instance
 
     -- Create new table if needed
     if DB.new then
@@ -1618,20 +1639,6 @@ setmetatable(Table, {__call = Table.new})
 
 --[[orm.class.model]]
 ------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
---                                Constants                                 --
-------------------------------------------------------------------------------
--- Global
-ID = "id"
-AGGREGATOR = "aggregator"
-QUERY_LIST = "query_list"
-
--- databases types
-SQLITE = "sqlite3"
-ORACLE = "oracle"
-MYSQL = "mysql"
-POSTGRESQL = "postgresql"
 
 ------------------------------------------------------------------------------
 --                              Model Settings                              --
@@ -1763,5 +1770,5 @@ db = {
     end
 }
 
-return { Table, fields }
+return { Table, fields, pairs }
 
