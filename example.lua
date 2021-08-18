@@ -13,10 +13,10 @@ DB = {
 
 -- local Table = require("orm.model")
 -- local fields = require("orm.tools.fields")
-local Table, fields, tablePairs
+local Table, fields, tablePairs, Or
 do
     local a= require("orm.Lua4DayORM")
-    Table, fields, tablePairs = a[1], a[2], a[3]
+    Table, fields, tablePairs, Or = a[1], a[2], a[3], a[4]
 end
 
 ----------------------------- CREATE TABLE --------------------------------
@@ -104,11 +104,11 @@ print("Second user name is: " .. users[2].username)
 
 ----------------------------- SORT DATA --------------------------------
 
-users = User.get:order_by({desc('age')}):all()
+users = User.get:order_by({Or.DESC('age')}):all()
 print("First user id: " .. users[1].id)
 -- First user id: 3
 
-users = User.get:order_by({desc('age'), asc('username')}):all()
+users = User.get:order_by({Or.DESC('age'), Or.ASC('username')}):all()
 
 ----------------------------- GROUP DATA --------------------------------
 
@@ -133,7 +133,7 @@ user = User.get:where({age__lt = 30,
                        age__gt = 10,
                        age__gte = 10
                 })
-                :order_by({asc('id')})
+                :order_by({Or.ASC('id')})
                 :group_by({'age', 'password'})
                 :having({id__in = {1, 3, 5},
                          id__notin = {2, 4, 6},
