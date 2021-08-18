@@ -4,15 +4,15 @@ local config = {
     newtable = true,
     path = "database.db",
     type = "sqlite3",
-    -- DEBUG = true,
-    -- TRACE = true
+    DEBUG = true,
+    TRACE = true
 }
 
 ----------------------------- REQUIRE --------------------------------
 
 -- local Table = require("orm.model")
 -- local fields = require("orm.tools.fields")
-local DBClass = require("Lua4DayORMAllInOne")
+local DBClass = require("Lua4DayORM")
 
 local instance = DBClass.new(config)
 
