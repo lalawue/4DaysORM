@@ -15,7 +15,7 @@ DB = {
 -- local fields = require("orm.tools.fields")
 local Table, fields
 do
-    local a= require("orm.all")
+    local a= require("orm.Lua4DayORM")
     Table, fields = a[1], a[2]
 end
 
