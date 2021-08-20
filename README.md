@@ -1,5 +1,5 @@
 
-non global variable version Lua4DayORM from [itdxer/4DaysORM](https://github.com/itdxer/4DaysORM/)
+All local variable version and all in one Lua4DaysORM from [itdxer/4DaysORM](https://github.com/itdxer/4DaysORM/)
 
 # Lua 4Days ORM 10 minutes tutorial #
 
@@ -8,7 +8,7 @@ non global variable version Lua4DayORM from [itdxer/4DaysORM](https://github.com
 first get DatabaseClass after require:
 
 ```lua
-local DBClass = require("Lua4DayORM")
+local DBClass = require("sql-orm")
 ```
 
 then create instance:

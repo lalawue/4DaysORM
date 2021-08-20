@@ -10,9 +10,7 @@ local config = {
 
 ----------------------------- REQUIRE --------------------------------
 
--- local Table = require("orm.model")
--- local fields = require("orm.tools.fields")
-local DBClass = require("Lua4DayORM")
+local DBClass = require("sql-orm")
 
 local instance = DBClass.new(config)
 
