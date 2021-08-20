@@ -1,7 +1,8 @@
 package = 'sql-orm'
 version = '0.3.20210821-1'
 source = {
-   url = 'git+https://github.com/lalawue/Lua4DaysORM.git'
+   url = 'git+https://github.com/lalawue/Lua4DaysORM.git',
+   tag = '0.3.20210821'
 }
 description = {
    summary = 'Lua SQL ORM',
