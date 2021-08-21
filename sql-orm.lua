@@ -10,6 +10,7 @@
 local ID = "id"
 local AGGREGATOR = "aggregator"
 local QUERY_LIST = "query_list"
+--local TABLE_COLUMN_SEPERATOR = "__"
 
 -- databases types
 local SQLITE = "sqlite3"
@@ -42,9 +43,9 @@ local function _cutend(String, End)
 end
 
 local function _divided_into(String, separator)
-    local separator_pos = string.find(String, separator)
-    return string.sub(String, 0, separator_pos - 1),
-           string.sub(String, separator_pos + 1, #String)
+    local s, e = string.find(String, separator)
+    return string.sub(String, 1, s - 1),
+           string.sub(String, e + 1, #String)
 end
 
 -- function table.has_key(array, key)
@@ -858,7 +859,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
     --
     -- @return {table} database query instance
     ---------------------------------------------------
-    function Query(own_table, data)
+    local function _Query(own_table, data)
         local query = {
             ------------------------------------------------
             --          Table info varibles               --
@@ -1076,12 +1077,12 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
 
         return query
     end
+    Query = _Query
 
     --[[orm.class.query_list]]
     ------------------------------------------------------------------------------
 
-    function QueryList(own_table, rows)
-        local current_query
+    local function _QueryList(own_table, rows)
         local _query_list = {
             ------------------------------------------------
             --          Table info varibles               --
@@ -1165,7 +1166,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                                 __call = _query_list.__call})
 
         for _, row in tpairs(rows) do
-            current_query = _query_list:with_id(Type.to.number(row.id))
+            local current_query = _query_list:with_id(Type.to.number(row.id))
 
             if current_query then
                 for key, value in tpairs(row) do
@@ -1183,6 +1184,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
 
         return _query_list
     end
+    QueryList = _QueryList
 
 
     --[[orm.class.field]]
@@ -1556,7 +1558,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                 end
 
                 return "`" .. tablename .. "`.`" .. column .. "`",
-                    tablename .. "_" .. column
+                    tablename .. "__" .. column
             end,
 
             -- Check column in table
@@ -1589,7 +1591,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                     end
                 end
 
-                BACKTRACE(WARNING, "Can't find column '" .. tostring(column) ..
+                BACKTRACE(WARNING, "Can't find column '" .. tostring(colname) ..
                                 "' in table '" .. self.__tablename__ .. "'")
             end
         }
@@ -1668,16 +1670,14 @@ local function _createDatabaseInstance(_connect, BACKTRACE)
         rows = function (self, query, own_table)
             local _cursor = self:execute(query)
             local data = {}
-            local current_row = {}
-            local current_table
-            local row
 
             if _cursor then
-                row = _cursor:fetch({}, "a")
+                local row = _cursor:fetch({}, "a")
+                local current_row = {}
 
                 while row do
                     for colname, value in tpairs(row) do
-                        current_table, colname = _divided_into(colname, "_")
+                        local current_table, colname = _divided_into(colname, "__")
 
                         if current_table == own_table.__tablename__ then
                             current_row[colname] = value
@@ -1695,7 +1695,6 @@ local function _createDatabaseInstance(_connect, BACKTRACE)
                     current_row = {}
                     row = _cursor:fetch({}, "a")
                 end
-
             end
 
             return data

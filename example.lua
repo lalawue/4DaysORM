@@ -19,7 +19,7 @@ local Table, Field, tpairs, Or = instance.Table, instance.Field, instance.tableP
 ----------------------------- CREATE TABLE --------------------------------
 
 local User = Table({
-    __tablename__ = "user",
+    __tablename__ = "user_t",
     username = Field.CharField({max_length = 100, unique = true}),
     password = Field.CharField({max_length = 50, unique = true}),
     age = Field.IntegerField({max_length = 2, null = true}),
@@ -158,7 +158,7 @@ news = News({title = "Other title", create_user_id = user.id})
 news:save()
 
 news = News.get:join(User):all()
-print("First news user id is: " .. news[1].user.id)
+print("First news user id is: " .. news[1].user_t.id)
 -- First news user id is: 1
 
 local user = User.get:join(News):all()[1]
