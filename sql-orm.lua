@@ -978,6 +978,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                 _connect = dbInstance:insert(insert)
 
                 self._data.id = {new = _connect}
+                return _connect
             end,
 
             -- Update data in database
@@ -1007,7 +1008,9 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
 
                 if set ~= "" then
                     update = update .. " SET " .. set .. "\n\t    WHERE `" .. ID .. "` = " .. self.id
-                    dbInstance:execute(update)
+                    return dbInstance:execute(update)
+                else
+                    return false
                 end
             end,
 
@@ -1018,23 +1021,24 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
             -- save row
             save = function (self)
                 if self.id then
-                    self:_update()
+                    return self:_update()
                 else
-                    self:_add()
+                    return self:_add()
                 end
             end,
 
             -- delete row
             delete = function (self)
                 local delete, result
-
+                local ret = false
                 if self.id then
                     delete = "DELETE FROM `" .. self.own_table.__tablename__ .. "` "
                     delete = delete .. "WHERE `" .. ID .. "` = " .. self.id
 
-                    dbInstance:execute(delete)
+                    ret = dbInstance:execute(delete)
                 end
                 self._data = {}
+                return ret
             end
         }
 
