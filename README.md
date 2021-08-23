@@ -15,10 +15,11 @@ then create instance:
 
 ```lua
 local instance = DBClass.new({
-	DEBUG = true,
-	TRACE = true,
+	newtable = true,
 	type = "sqlite3",
 	path = "database.db",
+	DEBUG = true,
+	TRACE = true
 })
 ```
 and you can disconnect in the end:

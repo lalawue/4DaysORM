@@ -1,18 +1,14 @@
+----------------------------- REQUIRE --------------------------------
 
------------------------------ ORM SETTINGS --------------------------------
-local config = {
+local DBClass = require("sql-orm")
+
+local instance = DBClass.new({
     newtable = true,
     path = "database.db",
     type = "sqlite3",
     DEBUG = true,
     TRACE = true
-}
-
------------------------------ REQUIRE --------------------------------
-
-local DBClass = require("sql-orm")
-
-local instance = DBClass.new(config)
+})
 
 local Table, Field, tpairs, Or = instance.Table, instance.Field, instance.tablePairs, instance.OrderBy
 
