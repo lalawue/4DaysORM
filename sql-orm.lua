@@ -953,7 +953,6 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                         -- Set default value
                         elseif table_column.settings.default then
                             value = table_column.field.as(table_column.settings.default)
-
                         else
                             value = "NULL"
                         end
