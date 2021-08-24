@@ -16,7 +16,7 @@ local Table, Field, tpairs, Or = instance.Table, instance.Field, instance.tableP
 
 local User = Table({
     __tablename__ = "user_t",
-    username = Field.CharField({max_length = 100, unique = true}),
+    username = Field.CharField({max_length = 100, primary_key = true}),
     password = Field.CharField({max_length = 50, unique = true}),
     age = Field.IntegerField({max_length = 2, null = true}),
     job = Field.CharField({max_length = 50, null = true}),

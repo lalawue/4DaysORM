@@ -1275,8 +1275,12 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                                 _type = _type .. " PRIMARY KEY"
                             end
 
-                            if this.settings.auto_increment and Config.type ~= SQLITE then
-                                _type = _type .. " AUTO_INCREMENT"
+                            if this.settings.auto_increment then
+                                if Config.type == SQLITE then
+                                    _type = _type .. " AUTOINCREMENT"
+                                else
+                                    _type = _type .. " AUTO_INCREMENT"
+                                end
                             end
 
                             if this.settings.unique then
@@ -1297,7 +1301,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                     -- instances of the same field type would have the same settings table.
                     --
                     for index, setting in tpairs(new_self.field.settings) do
-                    new_self.settings[index] = setting
+                        new_self.settings[index] = setting
                     end
 
                     -- Set settings for column
@@ -1314,8 +1318,16 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
                     end
 
                     if args.escape_value then
-                    new_self.settings.escape_value = true
+                        new_self.settings.escape_value = true
                     end
+
+                    if args.unique then
+                        new_self.settings.unique = args.unique
+                    end
+
+                    -- if args.primary_key then
+                    --     new_self.settings.primary_key = args.primary_key
+                    -- end
 
                     return new_self
                 end
@@ -1378,6 +1390,10 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
 
     Field.BooleandField = FieldBase:register({
         __type__ = "bool"
+    })
+
+    Field.BlobField = FieldBase:register({
+        __type__ = "blob"
     })
 
     Field.DateTimeField = FieldBase:register({
@@ -1483,20 +1499,19 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
 
         local tbl = self.__columnCreateOrder__    
         if (customColumnCreateOrder) then
-        for _, colname in ipairs(customColumnCreateOrder) do
-            -- Add only existing columns to the column create order
-            if (args[colname]) then
-            tbl[#tbl + 1] = colname
+            for _, colname in ipairs(customColumnCreateOrder) do
+                -- Add only existing columns to the column create order
+                if (args[colname]) then
+                    tbl[#tbl + 1] = colname
+                end
             end
-        end
         end
 
         for colname, coltype in tpairs(args) do
-
-        -- Add the columns that are defined but missing from the column create order
-        if (not _tableHasValue(self.__columnCreateOrder__, colname)) then
-            tbl[#tbl + 1] = colname
-        end
+            -- Add the columns that are defined but missing from the column create order
+            if (not _tableHasValue(self.__columnCreateOrder__, colname)) then
+                tbl[#tbl + 1] = colname
+            end
         end
 
 
