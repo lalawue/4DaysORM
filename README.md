@@ -32,14 +32,14 @@ options below:
 
 **Development configurations:**
 
-1. `newtable` - if this value is `true`, then previous database was removed and new  was created (*`true` by default*).
+1. `newtable` - if this value is `true`, then new table was created if not exsit (*`true` by default*).
 2. `TRACE` - if this value is `true`, than you will be able to see in console all Warnings, Errors and Information messages (*`true` by default*).
 3. `DEBUG` - if this value is `true`, you will be able to see in console all SQL queries (*`true` by default*).
 
 **Database configurations**
 
 1. `type` - by default `"sqlite3"`. Also it can be:
-    - `"mysql"` - for MySQL database
+    - `"mysql"` - for MySQL database (not tested)
     - `"postgresql"` - for PostgreSQL database (*implemented soon*)
 2. `path` - this is a path to database file for `"sqlite3"`. For other databases this value contains database name. (*by default `"database.db"`*)
 3. `username` - database user name (*by default `nil`*)
@@ -68,6 +68,7 @@ local User = Table({
     age = Field.IntegerField({max_length = 2, null = true}),
     job = Field.CharField({max_length = 50, null = true}),
     time_create = Field.DateTimeField({null = true})
+    -- data = Field.BlobField({null = true}),
 })
 ```
 
@@ -83,7 +84,7 @@ Also you can add different settings to your table fields
 3. `null` - can be `true` or `false`. If value is `true` then value in table will be saved as `NULL`.
 4. `default` - if you didn't add any value to this field - it is going to be saved as default value.
 5. `escape_value` - If this value is `true` and the column type is a string type special characters will be escaped to prevent sql injection
-6. `primary_key` can not set, will always be id column with auto increment
+6. `primary_key` can not set, will be used in id column with auto increment
 
 ## Types of table fields ##
 
@@ -92,10 +93,10 @@ Supported types of table fields
 1. `CharField` - Creates `VARCHAR` field
 2. `IntegerField` - Creates `INTEGER` field
 3. `TextField` - Creates `TEXT` field
-4. `BooleanField` - Creates `BOOLEAN` field
-5. `DateTimeField` - Creates `INTEGER` field but brings back `os.date` instance 
-6. `PrimaryField` - Creates `INTEGER` field with `PRIMARY KEY`
-7. `ForeignKey` - Creates relationships between tables. 
+4. `BlobField` - Creates `BLOB` field
+5. `BooleanField` - Creates `BOOLEAN` field
+6. `DateTimeField` - Creates `INTEGER` field but brings back `os.date` instance 
+8. `ForeignKey` - Creates relationships between tables. 
 
 Also you can create your types of table fields. But about it later.
 
