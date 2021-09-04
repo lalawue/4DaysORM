@@ -315,7 +315,7 @@ user = User.get:where({age__lt = 30,
                        age__gt = 10,
                        age__gte = 10
                 })
-                :order_by({asc('id')})
+                :order_by({OrderBy.ASC('id')})
                 :group_by({'age', 'password'})
                 :having({id__in = {1, 3, 5},
                          id__notin = {2, 4, 6},
