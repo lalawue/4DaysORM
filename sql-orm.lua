@@ -25,6 +25,12 @@ local INFO = 'i'
 local DEBUG = 'd'
 
 local _pairs = pairs
+local type = type
+local setmetatable = setmetatable
+local tonumber = tonumber
+local tostring = tostring
+local mathmodf = math.modf
+local next = next
 
 local function tpairs(tbl)
     if tbl.__classname__ == QUERY_LIST then
@@ -73,7 +79,7 @@ local Type = {
     is = {
         int = function (value)
             if type(value) == "number" then
-                integer, fractional = math.modf(value)
+                local integer, fractional = mathmodf(value)
                 return fractional == 0
             end
         end,
@@ -88,6 +94,10 @@ local Type = {
 
         table = function (value)
             return type(value) == "table"
+        end,
+
+        bool = function (value)
+            return type(value) == "boolean"
         end,
     },
 
@@ -218,28 +228,20 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
 
     -- Escape text values to prevent sql injection
     local function _escapeValue(own_table, colname, colvalue)
-
-    local coltype = own_table:get_column(colname)
-    if coltype and coltype.settings.escape_value then
-
-        local fieldtype = coltype.field.__type__
-        if fieldtype:find("text") or fieldtype:find("char") then
-
-        if (Config.type == "sqlite3" or Config.type == "mysql" or Config.type == "postgresql") then
-
-            -- See https://keplerproject.github.io/luasql/manual.html for a list of
-            -- database drivers that support this method
-            colvalue = dbInstance.connect:escape(colvalue)
-        elseif (Config.type == "oracle") then
-            BACKTRACE(WARNING, "Can't autoescape values for oracle databases (Tried to escape field `" .. colname .. "`)");
+        local coltype = own_table:get_column(colname)
+        if coltype and coltype.settings.escape_value then
+            local fieldtype = coltype.field.__type__
+            if fieldtype:find("text") or fieldtype:find("char") then
+                if (Config.type == "sqlite3" or Config.type == "mysql" or Config.type == "postgresql") then
+                    -- See https://keplerproject.github.io/luasql/manual.html for a list of
+                    -- database drivers that support this method
+                    colvalue = dbInstance.connect:escape(colvalue)
+                elseif (Config.type == "oracle") then
+                    BACKTRACE(WARNING, "Can't autoescape values for oracle databases (Tried to escape field `" .. colname .. "`)");
+                end
+            end
         end
-
-        end
-
-    end
-
-    return colvalue;
-
+        return colvalue
     end
 
 
@@ -890,7 +892,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
             -- @return {string|boolean|number|nil} column value
             -----------------------------------------
             _get_col = function (self, colname)
-                if self._data[colname] and self._data[colname].new then
+                if self._data[colname] and self._data[colname].new ~= nil then
                     return self._data[colname].new
 
                 elseif self._readonly[colname] then
@@ -906,7 +908,7 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
             _set_col = function (self, colname, colvalue)
                 local coltype
 
-                if self._data[colname] and self._data[colname].new and colname ~= ID then
+                if self._data[colname] and self._data[colname].new ~= nil and colname ~= ID then
                     coltype = self.own_table:get_column(colname)
 
                     if coltype and coltype.field.validator(colvalue) then
@@ -1387,8 +1389,18 @@ local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
         as = save_as_str
     })
 
-    Field.BooleandField = FieldBase:register({
-        __type__ = "bool"
+    Field.BooleanField = FieldBase:register({
+        __type__ = "integer",
+        as = function (value)
+            return value and 1 or 0
+        end,
+        to_type = function (value)
+            if Type.is.bool(value) then
+                return value
+            else
+                return value == 1 and true or false
+            end
+        end
     })
 
     Field.BlobField = FieldBase:register({

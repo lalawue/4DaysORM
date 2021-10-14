@@ -20,7 +20,8 @@ local User = Table({
     password = Field.CharField({max_length = 50, unique = true}),
     age = Field.IntegerField({max_length = 2, null = true}),
     job = Field.CharField({max_length = 50, null = true}),
-    time_create = Field.DateTimeField({null = true})
+    time_create = Field.DateTimeField({null = true}),
+    active = Field.BooleanField({null = true}),
 })
 
 ----------------------------- CREATE DATA --------------------------------
@@ -28,7 +29,7 @@ local User = Table({
 local user = User({
     username = "Bob Smith",
     password = "SuperSecretPassword",
-    time_create = os.time()
+    time_create = os.time(),
 })
 
 user:save()
@@ -58,10 +59,10 @@ User.get:where({username = "SomebodyNew"}):delete()
 
 ----------------------------- ADD TEST DATA --------------------------------
 
-user = User({username = "First user", password = "secret1", age = 22})
+user = User({username = "First user", password = "secret1", age = 22, active = true})
 user:save()
 
-user = User({username = "Second user", password = "secret_test", job = "Lua developer"})
+user = User({username = "Second user", password = "secret_test", job = "Lua developer", active = false})
 user:save()
 
 user = User({username = "Another user", password = "old_test", age = 44})
@@ -79,6 +80,9 @@ local first_user = User.get:first()
 print("First user name is: " .. first_user.username)
 -- First user name is: First user
 
+print("First user active is: " .. tostring(first_user.active))
+-- First user active is: true
+
 local users = User.get:all()
 print("We get " .. users:count() .. " users")
 -- We get 5 users
@@ -90,6 +94,9 @@ print("We get " .. users:count() .. " users")
 -- We get 2 users
 print("Second user name is: " .. users[2].username)
 -- Second user name is: Second user
+
+print("Second user active is: " .. tostring(users[2].active))
+-- Second user active is: false
 
 users = User.get:limit(2):offset(2):all()
 print("Second user name is: " .. users[2].username)
