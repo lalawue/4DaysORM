@@ -1762,16 +1762,16 @@ local function _new(config)
         local luasql = require("luasql.sqlite3")
         SqlEnv = luasql.sqlite3()
         _connect = SqlEnv:connect(config.path)
-        print("Connect " .. SQLITE, config.path)
+        print("[SQL-ORM] Connect " .. SQLITE, config.path)
     elseif config.type == MYSQL then
         local luasql = require("luasql.mysql")
         SqlEnv = luasql.mysql()
-        print("Connect " .. MYSQL, config.path, config.username, config.password, config.host, config.port)
+        print("[SQL-ORM] Connect " .. MYSQL, config.path, config.username, config.password, config.host, config.port)
         _connect = SqlEnv:connect(config.path, config.username, config.password, config.host, config.port)
     elseif config.type == POSTGRESQL then
         local luasql = require("luasql.postgres")
         SqlEnv = luasql.postgres()
-        print("Connect " .. POSTGRESQL, config.path, config.username, config.password, config.host, config.port)
+        print("[SQL-ORM] Connect " .. POSTGRESQL, config.path, config.username, config.password, config.host, config.port)
         _connect = SqlEnv:connect(config.path, config.username, config.password, config.host, config.port)
     else
         print(ERROR, "Database type not suported '" .. tostring(config.type) .. "'")
@@ -1779,7 +1779,7 @@ local function _new(config)
     end
     
     if not _connect then
-        print(ERROR, "Connect problem!")
+        print(ERROR, "[SQL-ORM] Connect problem !")
         return nil
     end
     
