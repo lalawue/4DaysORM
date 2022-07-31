@@ -1,5 +1,5 @@
 
-All local variable version and all in one Lua4DaysORM from [itdxer/4DaysORM](https://github.com/itdxer/4DaysORM/)
+All local variable version and all in one Lua4DaysORM from [itdxer/4DaysORM](https://github.com/itdxer/4DaysORM/), rewriten with [MoonCake](https://github.com/lalawue/mooncake).
 
 # Lua-ORM 10 minutes tutorial #
 
@@ -16,7 +16,7 @@ local DBClass = require("sql-orm")
 then create instance:
 
 ```lua
-local DBIns, Table, Field, Or = DBClass({
+local DBIns, Table, Field, OrderBy = DBClass({
     new_table = true,
     db_path = "database.db",
     db_type = "sqlite3",
@@ -427,7 +427,7 @@ local UserEmails = Table(
 },
 {
     email = fields.EmailField(),
-    user_id = fields.ForeignKey({ to = User })
+    user_id = fields.ForeignKey({ to_table = User })
 })
 
 local user_email = UserEmails({
