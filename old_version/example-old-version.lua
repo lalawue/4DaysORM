@@ -1,6 +1,6 @@
 ----------------------------- REQUIRE --------------------------------
 
-local DBClass = require("sql-orm")
+local DBClass = require("old_version.sql-orm-old-version")
 
 local instance = DBClass.new({
     newtable = true,

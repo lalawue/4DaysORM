@@ -1,1840 +1,1283 @@
+--
+-- Copyright (c) 2022 lalawue
+--
+-- This library is free software; you can redistribute it and/or modify it
+-- under the terms of the MIT license. See LICENSE for details.
+--
 
---[[ orm.class.global ]]
-------------------------------------------------------------------------------
-
-
-------------------------------------------------------------------------------
---                                Constants                                 --
-------------------------------------------------------------------------------
--- Global
-local ID = "id"
-local AGGREGATOR = "aggregator"
-local QUERY_LIST = "query_list"
---local TABLE_COLUMN_SEPERATOR = "__"
-
--- databases types
-local SQLITE = "sqlite3"
-local ORACLE = "oracle"
-local MYSQL = "mysql"
-local POSTGRESQL = "postgresql"
-
--- Backtrace types
-local ERROR = 'e'
-local WARNING = 'w'
-local INFO = 'i'
-local DEBUG = 'd'
-
-local _pairs = pairs
+local pairs = pairs
 local type = type
 local setmetatable = setmetatable
 local tonumber = tonumber
 local tostring = tostring
 local mathmodf = math.modf
 local next = next
-
-local function tpairs(tbl)
-    if tbl.__classname__ == QUERY_LIST then
-        return tbl()
-    else
-        return _pairs(tbl)
-    end
+local strsub = string.sub
+local strlen = string.len
+local strfind = string.find
+local strchar = string.char
+local strbyte = string.byte
+local strfmt = string.format
+local kID = "id"
+local kAGGREGATOR = "aggregator"
+local kDBType = { SQLITE = "sqlite3", ORACLE = "oracle", MYSQL = "mysql", POSTGRESQL = "postgresql" }
+local kWhere = { LESS_THEN = "__lt", EQ_OR_LESS_THEN = "__lte", MORE_THEN = "__gt", EQ_OR_MORE_THEN = "__gte", IN = "__in", NOT_IN = "__notin", IS_NULL = "__null" }
+local kJoin = { JOIN_INNER = 'i', JOIN_LEFT = 'l', JOIN_RIGHT = 'r', JOIN_FULL = 'f' }
+local kLog = { ERROR = 'e', WARNING = 'w', INFO = 'i', DEBUG = 'd' }
+local G_DB_Ins_Tbl = {  }
+local function _endWith(ss, se)
+	return se == '' or strsub(ss, -strlen(se)) == se
 end
-
-local function _endswith(String, End)
-    return End == '' or string.sub(String, -string.len(End)) == End
+local function _cutEnd(ss, se)
+	return se == '' and ss or strsub(ss, 0, -#se - 1)
 end
-
-local function _cutend(String, End)
-    return End == '' and String or string.sub(String, 0, -#End - 1)
+local function _dividedInto(ss, sep)
+	local s, e = strfind(ss, sep)
+	return strsub(ss, 1, s - 1), strsub(ss, e + 1, #ss)
 end
-
-local function _divided_into(String, separator)
-    local s, e = string.find(String, separator)
-    return string.sub(String, 1, s - 1),
-           string.sub(String, e + 1, #String)
+local function _isInt(value)
+	if type(value) == "number" then
+		local integer, fractional = mathmodf(value)
+		return fractional == 0
+	end
 end
-
--- function table.has_key(array, key)
---     if Type.is.table(key) and key.colname then
---         key = key.colname
---     end
-
---     for array_key, _  in pairs(array) do
---         if array_key == key then
---             return true
---         end
---     end
--- end
-
---[[orm.class.type]]
-------------------------------------------------------------------------------
-
-local Type = {
-    -- Check value for correct type
-    ----------------------------------
-    -- @value {any type} checked value
-    --
-    -- @return {boolean} get true if type is correct
-    ----------------------------------
-    is = {
-        int = function (value)
-            if type(value) == "number" then
-                local integer, fractional = mathmodf(value)
-                return fractional == 0
-            end
-        end,
-
-        number = function (value)
-            return type(value) == "number"
-        end,
-
-        str = function (value)
-            return type(value) == "string"
-        end,
-
-        table = function (value)
-            return type(value) == "table"
-        end,
-
-        bool = function (value)
-            return type(value) == "boolean"
-        end,
-    },
-
-    to = {
-        number = function (value)
-            return tonumber(value)
-        end,
-
-        str = function (value)
-            return tostring(value)
-        end
-    }
-}
-
+local function _isNumber(value)
+	return type(value) == "number"
+end
+local function _isStr(value)
+	return type(value) == "string"
+end
+local function _isTable(value)
+	return type(value) == "table"
+end
+local function _isBool(value)
+	return type(value) == "boolean"
+end
+local function _toNumber(value)
+	return tonumber(value)
+end
+local function _toStr(value)
+	return tostring(value)
+end
 local function _tableHasValue(array, value)
-    if Type.is.table(value) and value.colname then
-        value = value.colname
-    end
-
-    for _, array_value  in tpairs(array) do
-        if array_value == value then
-            return true
-        end
-    end
+	if _isTable(value) and value.colname then
+		value = value.colname
+	end
+	for _, array_value in ipairs(array) do
+		if array_value == value then
+			return true
+		end
+	end
 end
-
-local function _tableJoin(array, separator)
-    local result = ""
-    local counter = 0
-
-    if not separator then
-        separator = ","
-    end
-
-    for _, value in tpairs(array) do
-        if counter ~= 0 then
-            value = separator .. value
-        end
-
-        result = result .. value
-        counter = counter + 1
-    end
-
-    return result
+local function _tableJoin(array)
+	local result = ""
+	local counter = 0
+	local separator = ','
+	for _, value in ipairs(array) do
+		if counter > 0 then
+			value = separator .. value
+		end
+		result = result .. value
+		counter = counter + 1
+	end
+	return result
 end
-
---[[orm.class.property]]
-------------------------------------------------------------------------------
-
--- Function for create column functions
-local function Property(args)
-    return function (colname)
-        local column_func = {
-            -- class type
-            __classtype__ = AGGREGATOR,
-
-            -- Asc column name
-            colname = colname,
-
-            -- concatenate methods
-            __concat = function (left_part, right_part)
-                return tostring(left_part) .. tostring(right_part)
-            end,
-
-            __tostring = args.parse or self.parse
-        }
-
-        setmetatable(column_func, {__tostring = column_func.__tostring,
-                                   __concat = column_func.__concat})
-        return column_func
-    end
+local function _saveAsStr(str)
+	return "'" .. str .. "'"
 end
-
---[[
-    local names with specific Config, dbInstance, Table
-]]
-------------------------------------------------------------------------------
-local function _createDatabaseEnv(Config, dbInstance, BACKTRACE)
-
-    local All_Tables = {}
-
-    --local dbInstance
-
-    local QueryList
-    local Query
-
-
-    --[[orm.tools.func]]
-    ------------------------------------------------------------------------------
-
-    local OrderBy = {}
-
-    OrderBy.ASC = Property({
-        parse = function (self)
-            return "`" .. self.__table__ .. "`.`" .. self.colname .. "` ASC"
-        end
-    })
-
-    OrderBy.DESC = Property({
-        parse = function (self)
-            return "`" .. self.__table__ .. "`.`" .. self.colname .. "` DESC"
-        end
-    })
-
-    OrderBy.MAX = Property({
-        parse = function (self)
-            return "MAX(`" .. self.__table__ .. "`.`" .. self.colname .. "`)"
-        end
-    })
-
-    OrderBy.MIN = Property({
-        parse = function (self)
-            return "MIN(`" .. self.__table__ .. "`.`" .. self.colname .. "`)"
-        end
-    })
-
-    OrderBy.COUNT = Property({
-        parse = function (self)
-            return "COUNT(`" .. self.__table__ .. "`.`" .. self.colname .. "`)"
-        end
-    })
-
-    OrderBy.SUM = Property({
-        parse = function (self)
-            return "SUM(" .. self.colname .. ")"
-        end
-    })
-
-    -- Escape text values to prevent sql injection
-    local function _escapeValue(own_table, colname, colvalue)
-        local coltype = own_table:get_column(colname)
-        if coltype and coltype.settings.escape_value then
-            local fieldtype = coltype.field.__type__
-            if fieldtype:find("text") or fieldtype:find("char") then
-                if (Config.type == "sqlite3" or Config.type == "mysql" or Config.type == "postgresql") then
-                    -- See https://keplerproject.github.io/luasql/manual.html for a list of
-                    -- database drivers that support this method
-                    colvalue = dbInstance.connect:escape(colvalue)
-                elseif (Config.type == "oracle") then
-                    BACKTRACE(WARNING, "Can't autoescape values for oracle databases (Tried to escape field `" .. colname .. "`)");
-                end
-            end
-        end
-        return colvalue
-    end
-
-
-    --[[orm.class.select]]
-    ------------------------------------------------------------------------------
-
-    -- For WHERE equations ends
-    local LESS_THEN = "__lt"
-    local EQ_OR_LESS_THEN = "__lte"
-    local MORE_THEN = "__gt"
-    local EQ_OR_MORE_THEN = "__gte"
-    local IN = "__in"
-    local NOT_IN = "__notin"
-    local IS_NULL = '__null'
-
-    -- Joining types
-    local JOIN = {
-        INNER = 'i',
-        LEFT = 'l',
-        RIGHT = 'r',
-        FULL = 'f'
-    }
-
-    local Select = function(own_table)
-        return {
-            ------------------------------------------------
-            --          Table info varibles               --
-            ------------------------------------------------
-            -- Link for table instance
-            own_table = own_table,
-
-            -- Create select rules
-            _rules = {
-                -- Where equation rules
-                where = {},
-                -- Having equation rules
-                having = {},
-                -- limit
-                limit = nil,
-                -- offset
-                offset = nil,
-                -- order columns list
-                order = {},
-                -- group columns list
-                group = {},
-                --Columns rules
-                columns = {
-                    -- Joining tables rules
-                    join = {},
-                    -- including columns list
-                    include = {},
-                }
-            },
-
-            ------------------------------------------------
-            --          Private methods                   --
-            ------------------------------------------------
-
-            -- Build correctly equation for SQL searching
-            _build_equation = function (self, colname, value)
-                local result = ""
-                local table_column
-                local rule
-                local _in
-
-                -- Special conditions that need no value escaping
-                if _endswith(colname, IS_NULL) then
-                    colname = _cutend(colname, IS_NULL)
-
-                    if value then
-                        result = " IS NULL"
-                    else
-                        result = " NOT NULL"
-                    end
-
-                elseif _endswith(colname, IN) or _endswith(colname, NOT_IN) then
-                    rule = _endswith(colname, IN) and IN or NOT_IN
-
-                    if type(value) == "table" and #value > 0 then
-                        colname = _cutend(colname, rule)
-                        table_column = self.own_table:get_column(colname)
-                        _in = {}
-
-                        for counter, val in tpairs(value) do
-                            _in[#_in + 1] = table_column.field.as(val)
-                        end
-
-                        if rule == IN then
-                            result = " IN (" .. _tableJoin(_in) .. ")"
-                        elseif rule == NOT_IN then
-                            result = " NOT IN (" .. _tableJoin(_in) .. ")"
-                        end
-
-                    end
-
-                else
-
-                    -- Conditions that need value escaping when it's enabled
-                    local conditionPrepend = ""
-
-                    if _endswith(colname, LESS_THEN) and Type.is.number(value) then
-                        colname = _cutend(colname, LESS_THEN)
-                        conditionPrepend = " < "
-
-                    elseif _endswith(colname, MORE_THEN) and Type.is.number(value) then
-                        colname = _cutend(colname, MORE_THEN)
-                        conditionPrepend = " > "
-
-                    elseif _endswith(colname, EQ_OR_LESS_THEN) and Type.is.number(value) then
-                        colname = _cutend(colname, EQ_OR_LESS_THEN)
-                        conditionPrepend = " <= "
-
-                    elseif _endswith(colname, EQ_OR_MORE_THEN) and Type.is.number(value) then
-                        colname = _cutend(colname, EQ_OR_MORE_THEN)
-                        conditionPrepend = " >= "
-
-                    else
-                        conditionPrepend = " = "
-                    end
-
-                    value = _escapeValue(self.own_table, colname, value)
-                    table_column = self.own_table:get_column(colname)
-                    result = conditionPrepend .. table_column.field.as(value)
-
-                end
-
-                if self.own_table:has_column(colname) then
-                    local parse_column, _ = self.own_table:column(colname)
-                    result = parse_column .. result
-                end
-
-                return result
-            end,
-
-            -- Need for ASC and DESC columns
-            _update_col_names = function (self, list_of_cols)
-                local tablename = self.own_table.__tablename__
-                local result = {}
-                local parsed_column
-
-                for _, col in tpairs(list_of_cols) do
-                    if Type.is.table(col) and col.__classtype__ == AGGREGATOR then
-                        col.__table__ = self.own_table.__tablename__
-                        result[#result + 1] = col
-                    else
-                        parsed_column, _ = self.own_table:column(col)
-                        result[#result + 1] = parsed_column
-                    end
-                end
-
-                return result
-            end,
-
-            -- Build condition for equation rules
-            ---------------------------------------------------
-            -- @rules {table} list of columns
-            -- @start_with {string} WHERE or HAVING
-            --
-            -- @retrun {string} parsed string for select equation
-            ---------------------------------------------------
-            _condition = function (self, rules, start_with)
-                local counter = 0
-                local condition = ""
-                local _equation
-
-                condition = condition .. start_with
-
-                -- TODO: add OR
-                for colname, value in tpairs(rules) do
-                    _equation = self:_build_equation(colname, value)
-
-                    if counter ~= 0 then
-                        _equation = "AND " .. _equation
-                    end
-
-                    condition = condition .. " " .. _equation
-                    counter = counter + 1
-                end
-
-                return condition
-            end,
-
-            _has_foreign_key_table = function (self, left_table, right_table)
-                for _, key in tpairs(left_table.__foreign_keys) do
-                    if key.settings.to == right_table then
-                        return true
-                    end
-                end
-            end,
-
-            -- Build join tables rules
-            _build_join = function (self)
-                local result_join = ""
-                local unique_tables = {}
-                local left_table, right_table, mode
-                local join_mode, colname
-                local parsed_column, _
-                local tablename
-
-                for _, value in tpairs(self._rules.columns.join) do
-                    left_table = value[1]
-                    right_table = value[2]
-                    mode = value[3]
-                    tablename = left_table.__tablename__
-
-                    if mode == JOIN.INNER then
-                        join_mode = "INNER JOIN"
-
-                    elseif mode == JOIN.LEFT then
-                        join_mode = "LEFT OUTER JOIN"
-
-                    elseif mode == JOIN.RIGHT then
-                        join_mode = "RIGHT OUTER JOIN"
-
-                    elseif mode == JOIN.FULL then
-                        join_mode = "FULL OUTER JOIN"
-
-                    else
-                        BACKTRACE(WARNING, "Not valid join mode " .. mode)
-                    end
-
-                    if self:_has_foreign_key_table(right_table, left_table) then
-                        left_table, right_table = right_table, left_table
-                        tablename = right_table.__tablename__
-
-                    elseif not self:_has_foreign_key_table(right_table, left_table) then
-                        BACKTRACE(WARNING, "Not valid tables links")
-                    end
-
-                    for _, key in tpairs(left_table.__foreign_keys) do
-                        if key.settings.to == right_table then
-                            colname = key.name
-
-                            result_join = result_join .. " \n" .. join_mode .. " `" ..
-                                        tablename .. "` ON "
-
-                            parsed_column, _ = left_table:column(colname)
-                            result_join = result_join .. parsed_column
-
-                            parsed_column, _ = right_table:column(ID)
-                            result_join = result_join .. " = " .. parsed_column
-
-                            break
-                        end
-                    end
-                end
-
-                return result_join
-            end,
-
-            -- String with including data in select
-            --------------------------------------------
-            -- @own_table {table|nil} Table instance
-            --
-            -- @return {string} comma separated fields
-            --------------------------------------------
-            _build_including = function (self, own_table)
-                local include = {}
-                local colname_as, colname
-
-                if not own_table then
-                    own_table = self.own_table
-                end
-
-                -- get current column
-                for _, column in tpairs(own_table.__colnames) do
-                    colname, colname_as = own_table:column(column.name)
-                    include[#include + 1] = colname .. " AS " .. colname_as
-                end
-
-                include = _tableJoin(include)
-
-                return include
-            end,
-
-            -- Method for build select with rules
-            _select = function (self)
-                local including = self:_build_including()
-                local joining = ""
-                local _select
-                local tablename
-                local condition
-                local where
-                local rule
-                local join
-
-                --------------------- Include Columns To Select ------------------
-                _select = "SELECT " .. including
-
-                -- Add join rules
-                if #self._rules.columns.join > 0 then
-                    local unique_tables = { self.own_table }
-                    local join_tables = {}
-                    local left_table, right_table
-
-                    for _, values in tpairs(self._rules.columns.join) do
-                        left_table = values[1]
-                        right_table = values[2]
-
-                        if not _tableHasValue(unique_tables, left_table) then
-                            unique_tables[#unique_tables + 1] = left_table
-                            _select = _select .. ", " .. self:_build_including(left_table)
-                        end
-
-                        if not _tableHasValue(unique_tables, right_table) then
-                            unique_tables[#unique_tables + 1] = right_table
-                            _select = _select .. ", " .. self:_build_including(right_table)
-                        end
-                    end
-
-                    join = self:_build_join()
-                end
-
-                -- Check aggregators in select
-                if #self._rules.columns.include > 0 then
-                    local aggregators = {}
-                    local aggregator, as
-
-                    for _, value in tpairs(self._rules.columns.include) do
-                        _, as = own_table:column(value.as)
-                        aggregators[#aggregators + 1] = value[1] .. " AS " .. as
-                    end
-
-                    _select = _select .. ", " .. _tableJoin(aggregators)
-                end
-                ------------------- End Include Columns To Select ----------------
-
-                _select = _select .. " FROM `" .. self.own_table.__tablename__ .. "`"
-
-                if join then
-                    _select = _select .. " " .. join
-                end
-
-                -- Build WHERE
-                if next(self._rules.where) then
-                    condition = self:_condition(self._rules.where, "\nWHERE")
-                    _select = _select .. " " .. condition
-                end
-
-                -- Build GROUP BY
-                if #self._rules.group > 0 then
-                    rule = self:_update_col_names(self._rules.group)
-                    rule = _tableJoin(rule)
-                    _select = _select .. " \nGROUP BY " .. rule
-                end
-
-                -- Build HAVING
-                if next(self._rules.having) and self._rules.group then
-                    condition = self:_condition(self._rules.having, "\nHAVING")
-                    _select = _select .. " " .. condition
-                end
-
-                -- Build ORDER BY
-                if #self._rules.order > 0 then
-                    rule = self:_update_col_names(self._rules.order)
-                    rule = _tableJoin(rule)
-                    _select = _select .. " \nORDER BY " .. rule
-                end
-
-                -- Build LIMIT
-                if self._rules.limit then
-                    _select = _select .. " \nLIMIT " .. self._rules.limit
-                end
-
-                -- Build OFFSET
-                if self._rules.offset then
-                    _select = _select .. " \nOFFSET " .. self._rules.offset
-                end
-
-                return dbInstance:rows(_select, self.own_table)
-            end,
-
-            -- Add column to table
-            -------------------------------------------------
-            -- @col_table {table} table with column names
-            -- @colname {string/table} column name or list of column names
-            -------------------------------------------------
-            _add_col_to_table = function (self, col_table, colname)
-                if Type.is.str(colname) and self.own_table:has_column(colname) then
-                    col_table[#col_table + 1] = colname
-
-                elseif Type.is.table(colname) then
-                    for _, column in tpairs(colname) do
-                        if (Type.is.table(column) and column.__classtype__ == AGGREGATOR
-                        and self.own_table:has_column(column.colname))
-                        or self.own_table:has_column(column) then
-                            col_table[#col_table + 1] = column
-                        end
-                    end
-
-                else
-                    BACKTRACE(WARNING, "Not a string and not a table (" ..
-                                    tostring(colname) .. ")")
-                end
-            end,
-
-            --------------------------------------------------------
-            --                   Column filters                   --
-            --------------------------------------------------------
-
-            -- Including columns to select query
-            include = function (self, column_list)
-                if Type.is.table(column_list) then
-                    local tbl = self._rules.columns.include
-                    for _, value in tpairs(column_list) do
-                        if Type.is.table(value) and value.as and value[1]
-                        and value[1].__classtype__ == AGGREGATOR then
-                            tbl[#tbl + 1] = value
-                        else
-                            BACKTRACE(WARNING, "Not valid aggregator syntax")
-                        end
-                    end
-                else
-                    BACKTRACE(WARNING, "You can include only table type data")
-                end
-
-                return self
-            end,
-
-            --------------------------------------------------------
-            --              Joining tables methods                --
-            --------------------------------------------------------
-
-            -- By default, join is INNER JOIN command
-            _join = function (self, left_table, MODE, right_table)
-                if not right_table then
-                    right_table = self.own_table
-                end
-
-                if left_table.__tablename__ then
-                    local tbl = self._rules.columns.join
-                    tbl[#tbl + 1] = {left_table, right_table, MODE}
-                else
-                    BACKTRACE(WARNING, "Not table in join")
-                end
-
-                return self
-            end,
-
-            join = function (self, left_table, right_table)
-                self:_join(left_table, JOIN.INNER, right_table)
-                return self
-            end,
-
-            -- left outer joining command
-            left_join = function (self, left_table, right_table)
-                self:_join(left_table, JOIN.LEFT, right_table)
-                return self
-            end,
-
-            -- right outer joining command
-            right_join = function (self, left_table, right_table)
-                self:_join(left_table, JOIN.RIGHT, right_table)
-                return self
-            end,
-
-            -- full outer joining command
-            full_join = function (self, left_table, right_table)
-                self:_join(left_table, JOIN.FULL, right_table)
-                return self
-            end,
-
-            --------------------------------------------------------
-            --              Select building methods               --
-            --------------------------------------------------------
-
-            -- SQL Where query rules
-            where = function (self, args)
-                for col, value in tpairs(args) do
-                    self._rules.where[col] = value
-                end
-
-                return self
-            end,
-
-            -- Set returned data limit
-            limit = function (self, count)
-                if Type.is.int(count) then
-                    self._rules.limit = count
-                else
-                    BACKTRACE(WARNING, "You try set limit to not integer value")
-                end
-
-                return self
-            end,
-
-            -- From which position start get data
-            offset = function (self, count)
-                if Type.is.int(count) then
-                    self._rules.offset = count
-                else
-                    BACKTRACE(WARNING, "You try set offset to not integer value")
-                end
-
-                return self
-            end,
-
-            -- Order table
-            order_by = function (self, colname)
-                self:_add_col_to_table(self._rules.order, colname)
-                return self
-            end,
-
-            -- Group table
-            group_by = function (self, colname)
-                self:_add_col_to_table(self._rules.group, colname)
-                return self
-            end,
-
-            -- Having
-            having = function (self, args)
-                for col, value in tpairs(args) do
-                    self._rules.having[col] = value
-                end
-
-                return self
-            end,
-
-            --------------------------------------------------------
-            --                 Update data methods                --
-            --------------------------------------------------------
-
-            update = function (self, data)
-                if Type.is.table(data) then
-                    local _update = "UPDATE `" .. self.own_table.__tablename__ .. "`"
-                    local _set = ""
-                    local coltype
-                    local _set_tbl = {}
-                    local i=1
-
-                    for colname, new_value in tpairs(data) do
-                        coltype = self.own_table:get_column(colname)
-
-                        if coltype and coltype.field.validator(new_value) then
-                            _set = _set .. " `" .. colname .. "` = " ..
-                                coltype.field.as(new_value)
-                            _set_tbl[i] = " `" .. colname .. "` = " ..
-                                    coltype.field.as(new_value)
-                            i=i+1
-                        else
-                            BACKTRACE(WARNING, "Can't update value for column `" ..
-                                                Type.to.str(colname) .. "`")
-                        end
-                    end
-
-                    -- Build WHERE
-                    local _where
-                    if next(self._rules.where) then
-                        _where = self:_condition(self._rules.where, "\nWHERE")
-                    else
-                        BACKTRACE(INFO, "No 'where' statement. All data update!")
-                    end
-
-                    if _set ~= "" then
-                        if #_set_tbl<2 then
-                            _update = _update .. " SET " .. _set .. " " .. _where
-                        else
-                            _update = _update .. " SET " .. table.concat(_set_tbl,",") .. " " .. _where
-                        end
-
-                        dbInstance:execute(_update)
-                    else
-                        BACKTRACE(WARNING, "No table columns for update")
-                    end
-                else
-                    BACKTRACE(WARNING, "No data for global update")
-                end
-            end,
-
-            --------------------------------------------------------
-            --                 Delete data methods                --
-            --------------------------------------------------------
-
-            delete = function (self)
-                local _delete = "DELETE FROM `" .. self.own_table.__tablename__ .. "` "
-
-                -- Build WHERE
-                if next(self._rules.where) then
-                    _delete = _delete .. self:_condition(self._rules.where, "\nWHERE")
-                else
-                    BACKTRACE(WARNING, "Try delete all values")
-                end
-
-                dbInstance:execute(_delete)
-            end,
-
-            --------------------------------------------------------
-            --              Get select data methods               --
-            --------------------------------------------------------
-
-            -- Return one value
-            first = function (self)
-                self._rules.limit = 1
-                local data = self:all()
-
-                if data:count() == 1 then
-                    return data[1]
-                end
-            end,
-
-            -- Return list of values
-            all = function (self)
-                local data = self:_select()
-                return QueryList(self.own_table, data)
-            end
-        }
-    end
-
-    --[[orm.class.query]]
-    ------------------------------------------------------------------------------
-
-    -- Creates an instance to retrieve and manage a
-    -- string table with the database
-    ---------------------------------------------------
-    -- @own_table {table} parent table instace
-    -- @data {table} data returned by the query to the database
-    --
-    -- @return {table} database query instance
-    ---------------------------------------------------
-    local function _Query(own_table, data)
-        local query = {
-            ------------------------------------------------
-            --          Table info varibles               --
-            ------------------------------------------------
-
-            -- Table instance
-            own_table = own_table,
-
-            -- Column data
-            -- Structure example of one column
-            -- fieldname = {
-            --     old = nil,
-            --     new = nil
-            -- }
-            _data = {},
-
-            -- Data only for read mode
-            _readonly = {},
-
-            ------------------------------------------------
-            --             Metamethods                    --
-            ------------------------------------------------
-
-            -- Get column value
-            -----------------------------------------
-            -- @colname {string} column name in table
-            --
-            -- @return {string|boolean|number|nil} column value
-            -----------------------------------------
-            _get_col = function (self, colname)
-                if self._data[colname] and self._data[colname].new ~= nil then
-                    return self._data[colname].new
-
-                elseif self._readonly[colname] then
-                    return self._readonly[colname]
-                end
-            end,
-
-            -- Set column new value
-            -----------------------------------------
-            -- @colname {string} column name in table
-            -- @colvalue {string|number|boolean} new column value
-            -----------------------------------------
-            _set_col = function (self, colname, colvalue)
-                local coltype
-
-                if self._data[colname] and self._data[colname].new ~= nil and colname ~= ID then
-                    coltype = self.own_table:get_column(colname)
-
-                    if coltype and coltype.field.validator(colvalue) then
-                        self._data[colname].old = self._data[colname].new
-                        self._data[colname].new = colvalue
-                    else
-                        BACKTRACE(WARNING, "Not valid column value for update")
-                    end
-                end
-            end,
-
-            ------------------------------------------------
-            --             Private methods                --
-            ------------------------------------------------
-
-            -- Add new row to table
-            _add = function (self)
-                local insert = "INSERT INTO `" .. self.own_table.__tablename__ .. "` ("
-                local counter = 0
-                local values = ""
-                local _connect
-                local value
-                local colname
-
-                for _, table_column in tpairs(self.own_table.__colnames) do
-                    colname = table_column.name
-
-                    if colname ~= ID then
-
-                        -- If value exist correct value
-                        if self[colname] ~= nil then
-                            value = self[colname]
-
-                            if table_column.field.validator(value) then
-                                value = _escapeValue(self.own_table, colname, value)
-                                value = table_column.field.as(value)
-                            else
-                                BACKTRACE(WARNING, "Wrong type for table '" ..
-                                                    self.own_table.__tablename__ ..
-                                                    "' in column '" .. tostring(colname) .. "'")
-                                return false
-                            end
-
-                        -- Set default value
-                        elseif table_column.settings.default then
-                            value = table_column.field.as(table_column.settings.default)
-                        else
-                            value = "NULL"
-                        end
-
-                        colname = "`" .. colname .. "`"
-
-                        -- TODO: save in correct type
-                        if counter ~= 0 then
-                            colname = ", " .. colname
-                            value = ", " .. value
-                        end
-
-                        values = values .. value
-                        insert = insert .. colname
-
-                        counter = counter + 1
-                    end
-                end
-
-                insert = insert .. ") \n\t    VALUES (" .. values .. ")"
-
-                -- TODO: return valid ID
-                _connect = dbInstance:insert(insert)
-
-                self._data.id = {new = _connect}
-                return _connect
-            end,
-
-            -- Update data in database
-            _update = function (self)
-                local update = "UPDATE `" .. self.own_table.__tablename__ .. "` "
-                local equation_for_set = {}
-                local set, coltype
-
-                for colname, colinfo in tpairs(self._data) do
-                    if colinfo.old ~= colinfo.new and colname ~= ID then
-                        coltype = self.own_table:get_column(colname)
-
-                        if coltype and coltype.field.validator(colinfo.new) then
-
-                            local colvalue = _escapeValue(self.own_table, colname, colinfo.new)
-                            set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
-
-                            equation_for_set[#equation_for_set + 1] = set
-                        else
-                            BACKTRACE(WARNING, "Can't update value for column `" ..
-                                            Type.to.str(colname) .. "`")
-                        end
-                    end
-                end
-
-                set = _tableJoin(equation_for_set, ",")
-
-                if set ~= "" then
-                    update = update .. " SET " .. set .. "\n\t    WHERE `" .. ID .. "` = " .. self.id
-                    return dbInstance:execute(update)
-                else
-                    return false
-                end
-            end,
-
-            ------------------------------------------------
-            --             User methods                   --
-            ------------------------------------------------
-
-            -- save row
-            save = function (self)
-                if self.id then
-                    return self:_update()
-                else
-                    return self:_add()
-                end
-            end,
-
-            -- delete row
-            delete = function (self)
-                local delete, result
-                local ret = false
-                if self.id then
-                    delete = "DELETE FROM `" .. self.own_table.__tablename__ .. "` "
-                    delete = delete .. "WHERE `" .. ID .. "` = " .. self.id
-
-                    ret = dbInstance:execute(delete)
-                end
-                self._data = {}
-                return ret
-            end
-        }
-
-        if data then
-            local current_table
-
-            for colname, colvalue in tpairs(data) do
-                if query.own_table:has_column(colname) then
-                    colvalue = query.own_table:get_column(colname)
-                                            .field.to_type(colvalue)
-                    query._data[colname] = {
-                        new = colvalue,
-                        old = colvalue
-                    }
-                else
-                    if All_Tables[colname] then
-                        current_table = All_Tables[colname]
-                        colvalue = Query(current_table, colvalue)
-
-                        query._readonly[colname .. "_all"] = QueryList(current_table, {})
-                        query._readonly[colname .. "_all"]:add(colvalue)
-
-                    end
-
-                    query._readonly[colname] = colvalue
-                end
-            end
-        else
-            BACKTRACE(INFO, "Create empty row instance for table '" ..
-                            self.own_table.__tablename__ .. "'")
-        end
-
-        setmetatable(query, {__index = query._get_col,
-                            __newindex = query._set_col})
-
-        return query
-    end
-    Query = _Query
-
-    --[[orm.class.query_list]]
-    ------------------------------------------------------------------------------
-
-    local function _QueryList(own_table, rows)
-        local _query_list = {
-            ------------------------------------------------
-            --          Table info varibles               --
-            ------------------------------------------------
-
-            --class name
-            __classname__ = QUERY_LIST,
-
-            -- Own Table
-            own_table = own_table,
-
-            -- Stack of data rows
-            _stack = {},
-
-            ------------------------------------------------
-            --             Metamethods                    --
-            ------------------------------------------------
-
-            -- Get n-th position value from Query stack
-            ------------------------------------------------
-            -- @position {integer} position element is stack
-            --
-            -- @return {Query Instance} Table row instance
-            -- in n-th position
-            ------------------------------------------------
-            __index = function (self, position)
-                if Type.is.int(position) and position >= 1 then
-                    return self._stack[position]
-                end
-            end,
-
-            __call = function (self)
-                return tpairs(self._stack)
-            end,
-
-            ------------------------------------------------
-            --             User methods                   --
-            ------------------------------------------------
-
-            -- Get Query instance by id
-            ------------------------------------------------
-            -- @id {integer} table data row identifier
-            --
-            -- @return {table/nil} get Query instance or nil if
-            -- instance is not exists
-            ------------------------------------------------
-            with_id = function (self, id)
-                if Type.is.int(id) then
-                    for _, query in tpairs(self) do
-                        if query.id == id then
-                            return query
-                        end
-                    end
-                else
-                    BACKTRACE(WARNING, "ID `" .. id .. "` is not integer value")
-                end
-            end,
-
-            -- Add new Query Instance to stack
-            add = function (self, QueryInstance)
-                self._stack[#self._stack + 1] = QueryInstance
-            end,
-
-            -- Get count of values in stack
-            count = function (self)
-                return #self._stack
-            end,
-
-            -- Remove from database all elements from stack
-            delete = function (self)
-                for _, query in tpairs(self._stack) do
-                    query:delete()
-                end
-
-                self._stack = {}
-            end
-        }
-
-        setmetatable(_query_list, {__index = _query_list.__index,
-                                __len = _query_list.__len,
-                                __call = _query_list.__call})
-
-        for _, row in tpairs(rows) do
-            local current_query = _query_list:with_id(Type.to.number(row.id))
-
-            if current_query then
-                for key, value in tpairs(row) do
-                    if Type.is.table(value)
-                    and current_query._readonly[key .. "_all"] then
-                        current_query._readonly[key .. "_all"]:add(
-                            Query(All_Tables[key], value)
-                        )
-                    end
-                end
-            else
-                _query_list:add(Query(own_table, row))
-            end
-        end
-
-        return _query_list
-    end
-    QueryList = _QueryList
-
-
-    --[[orm.class.field]]
-    ------------------------------------------------------------------------------
-
-
-    local FieldBase = {
-        -- Table column type
-        __type__ = "varchar",
-
-        -- Validator handler
-        validator = function (self, value)
-            return true
-        end,
-
-        -- Default parser
-        as = function (value)
-            return value
-        end,
-
-        to_type = Type.to.str,
-
-        -- Call when create new field in some table
-        register = function (self, args)
-            if not args then
-                args = {}
-            end
-
-            -- New field type
-            -------------------------------------------
-            -- @args {table}
-            -- Table can have parametrs:
-            --    @args.__type__ {string} some sql valid type
-            --    @args.validator {function} type validator
-            --    @args.as {function} return parse value
-            -------------------------------------------
-            local new_field_type = {
-                -- some sql valid type
-                __type__ = args.__type__ or self.__type__,
-
-                -- Validator handler
-                validator = args.validator or self.validator,
-
-                -- Parse variable for equation
-                as = args.as or self.as,
-
-                -- Cast values to correct type
-                to_type = args.to_type or self.to_type,
-
-                -- Default settings for type
-                settings = args.settings or {},
-
-                -- Get new table column instance
-                new = function (this, args)
-                    if not args then
-                        args = {}
-                    end
-
-                    local new_self = {
-                        -- link to field instance
-                        field = this,
-
-                        -- Column name
-                        name = nil,
-
-                        -- Parent table
-                        __table__ = nil,
-
-                        -- table column settings
-                        settings = {
-                            default = nil,
-                            null = false,
-                            unique = false,
-                            max_length = nil,
-                            primary_key = false,
-                            escape_value = false
-                        },
-
-                        -- Return string for column type create
-                        _create_type = function (this)
-                            local _type = this.field.__type__
-
-                            if this.settings.max_length and this.settings.max_length > 0 then
-                                _type = _type .. "(" .. this.settings.max_length .. ")"
-                            end
-
-                            if this.settings.primary_key then
-                                _type = _type .. " PRIMARY KEY"
-                            end
-
-                            if this.settings.auto_increment then
-                                if Config.type == SQLITE then
-                                    _type = _type .. " AUTOINCREMENT"
-                                else
-                                    _type = _type .. " AUTO_INCREMENT"
-                                end
-                            end
-
-                            if this.settings.unique then
-                                _type = _type .. " UNIQUE"
-                            end
-
-                            _type = _type .. (this.settings.null and " NULL"
-                                                                or " NOT NULL")
-                            return _type
-                        end
-                    }
-
-                    -- Set Default settings
-
-                    --
-                    -- The content of the settings table must be copied because trying to copy a table
-                    -- directly will result in a reference to the original table, thus all
-                    -- instances of the same field type would have the same settings table.
-                    --
-                    for index, setting in tpairs(new_self.field.settings) do
-                        new_self.settings[index] = setting
-                    end
-
-                    -- Set settings for column
-                    if args.max_length then
-                        new_self.settings.max_length = args.max_length
-                    end
-
-                    if args.null ~= nil then
-                        new_self.settings.null = args.null
-                    end
-
-                    if new_self.settings.foreign_key and args.to then
-                        new_self.settings.to = args.to
-                    end
-
-                    if args.escape_value then
-                        new_self.settings.escape_value = true
-                    end
-
-                    if args.unique then
-                        new_self.settings.unique = args.unique
-                    end
-
-                    -- if args.primary_key then
-                    --     new_self.settings.primary_key = args.primary_key
-                    -- end
-
-                    return new_self
-                end
-            }
-
-            setmetatable(new_field_type, {__call = new_field_type.new})
-
-            return new_field_type
-        end
-    }
-
-
-    --[[orm.tools.fields]]
-    ------------------------------------------------------------------------------
-
-
-    ------------------------------------------------------------------------------
-    --                                Field Types                               --
-    ------------------------------------------------------------------------------
-    local function save_as_str(str)
-        return "'" .. str .. "'"
-    end
-
-    local Field = {}
-
-    -- The "Field" class will be used to search a table index that the "field" class doesn't have.
-    -- This way field:register() will call the same function like Field:register() and the register
-    -- function has access to the default values for the field configuration.
-    setmetatable(Field, {__index = FieldBase});
-
-
-    Field.PrimaryField = FieldBase:register({
-        __type__ = "integer",
-        validator = Type.is.int,
-        settings = {
-            null = true,
-            primary_key = true,
-            auto_increment = true
-        },
-        to_type = Type.to.number
-    })
-
-    Field.IntegerField = FieldBase:register({
-        __type__ = "integer",
-        validator = Type.is.int,
-        to_type = Type.to.number
-    })
-
-    Field.CharField = FieldBase:register({
-        __type__ = "varchar",
-        validator = Type.is.str,
-        as = save_as_str
-    })
-
-    Field.TextField = FieldBase:register({
-        __type__ = "text",
-        validator = Type.is.str,
-        as = save_as_str
-    })
-
-    Field.BooleanField = FieldBase:register({
-        __type__ = "integer",
-        as = function (value)
-            return value and 1 or 0
-        end,
-        to_type = function (value)
-            if Type.is.bool(value) then
-                return value
-            else
-                return value == 1 and true or false
-            end
-        end
-    })
-
-    Field.BlobField = FieldBase:register({
-        __type__ = "blob"
-    })
-
-    Field.DateTimeField = FieldBase:register({
-        __type__ = "integer",
-        validator = function (value)
-            if (Type.is.table(value) and value.isdst ~= nil)
-            or Type.is.int(value) then
-                return true
-            end
-        end,
-        as = function (value)
-            return Type.is.int(value) and value or os.time(value)
-        end,
-        to_type = function (value)
-            return os.date("*t", Type.to.number(value))
-        end
-    })
-
-    Field.ForeignKey = FieldBase:register({
-        __type__ = "integer",
-        settings = {
-            null = true,
-            foreign_key = true
-        },
-        to_type = Type.to.number
-    })
-
-    --[[orm.class.table]]
-    ------------------------------------------------------------------------------
-
-    local Table = {
-        -- database table name
-        __tablename__ = nil,
-
-        -- Foreign Keys list
-        foreign_keys = {},
-    }
-
-    -- This method create new table
-    -------------------------------------------
-    -- @table_instance {table} class Table instance
-    --
-    -- @table_instance.__tablename__ {string} table name
-    -- @table_instance.__colnames {table} list of column instances
-    -- @table_instance.__foreign_keys {table} list of foreign key
-    --                                        column instances
-    -------------------------------------------
-    function Table:create_table(table_instance)
-        -- table information
-        local tablename = table_instance.__tablename__
-        local columns = table_instance.__colnames
-        local foreign_keys = table_instance.__foreign_keys
-
-        BACKTRACE(INFO, "Start create table: " .. tablename)
-
-        -- other variables
-        local create_query = "CREATE TABLE IF NOT EXISTS `" .. tablename .. "` \n("
-        local counter = 0
-        local column_query
-        local result
-
-        for _, coltype in tpairs(columns) do
-            column_query = "\n     `" .. coltype.name .. "` " .. coltype:_create_type()
-
-            if counter ~= 0 then
-                column_query = "," .. column_query
-            end
-
-            create_query = create_query .. column_query
-            counter = counter + 1
-        end
-
-        for _, coltype in tpairs(foreign_keys) do
-            create_query = create_query .. ",\n     FOREIGN KEY(`" ..
-                        coltype.name .. "`)" .. " REFERENCES `" ..
-                        coltype.settings.to.__tablename__ ..
-                        "`(`id`)"
-        end
-
-        create_query = create_query .. "\n)"
-
-        dbInstance:execute(create_query)
-    end
-
-    -- Create new table instance
-    --------------------------------------
-    -- @args {table} must have __tablename__ key
-    -- and other must be a column names
-    --------------------------------------
-    function Table.new(self, args)
-        local colnames = {}
-        local create_query
-
-        self.__tablename__ = args.__tablename__
-        args.__tablename__ = nil
-
-        -- Determine the column creation order
-        -- This is necessary because tables in lua have no order
-        self.__columnCreateOrder__ = { "id" };
-
-        local customColumnCreateOrder = args.__columnCreateOrder__;
-        args.__columnCreateOrder__ = nil;
-
-        local tbl = self.__columnCreateOrder__    
-        if (customColumnCreateOrder) then
-            for _, colname in ipairs(customColumnCreateOrder) do
-                -- Add only existing columns to the column create order
-                if (args[colname]) then
-                    tbl[#tbl + 1] = colname
-                end
-            end
-        end
-
-        for colname, coltype in tpairs(args) do
-            -- Add the columns that are defined but missing from the column create order
-            if (not _tableHasValue(self.__columnCreateOrder__, colname)) then
-                tbl[#tbl + 1] = colname
-            end
-        end
-
-
-        local Table_instance = {
-            ------------------------------------------------
-            --            Table info variables            --
-            ------------------------------------------------
-
-            -- SQL table name
-            __tablename__ = self.__tablename__,
-
-            -- list of column names
-            __colnames = {},
-
-            -- Foreign keys list
-            __foreign_keys = {},
-
-            ------------------------------------------------
-            --                Metamethods                 --
-            ------------------------------------------------
-
-            -- If try get value by name "get" it return Select class instance
-            __index = function (self, key)
-                if key == "get" then
-                    return Select(self)
-                end
-
-                local old_index = self.__index
-                setmetatable(self, {__index = nil})
-
-                key = self[key]
-
-                setmetatable(self, {__index = old_index, __call = self.create})
-
-                return key
-            end,
-
-            -- Create new row instance
-            -----------------------------------------
-            -- @data {table} parsed query answer data
-            --
-            -- @retrun {table} Query instance
-            -----------------------------------------
-            create = function (self, data)
-                return Query(self, data)
-            end,
-
-            ------------------------------------------------
-            --          Methods which using               --
-            ------------------------------------------------
-
-            -- parse column in correct types
-            column = function (self, column)
-                local tablename = self.__tablename__
-
-                if Type.is.table(column) and column.__classtype__ == AGGREGATOR then
-                    column.colname = tablename .. column.colname
-                    column = column .. ""
-                end
-
-                return "`" .. tablename .. "`.`" .. column .. "`",
-                    tablename .. "__" .. column
-            end,
-
-            -- Check column in table
-            -----------------------------------------
-            -- @colname {string} column name
-            --
-            -- @return {boolean} get true if column exist
-            -----------------------------------------
-            has_column = function (self, colname)
-                for _, table_column in tpairs(self.__colnames) do
-                    if table_column.name == colname then
-                        return true
-                    end
-                end
-
-                BACKTRACE(WARNING, "Can't find column '" .. tostring(colname) ..
-                                "' in table '" .. self.__tablename__ .. "'")
-            end,
-
-            -- get column instance by name
-            -----------------------------------------
-            -- @colname {string} column name
-            --
-            -- @return {table} get column instance if column exist
-            -----------------------------------------
-            get_column = function (self, colname)
-                for _, table_column in tpairs(self.__colnames) do
-                    if table_column.name == colname then
-                        return table_column
-                    end
-                end
-
-                BACKTRACE(WARNING, "Can't find column '" .. tostring(colname) ..
-                                "' in table '" .. self.__tablename__ .. "'")
-            end
-        }
-
-        -- Add default column 'id'
-        args.id = Field.PrimaryField({auto_increment = true})
-
-        local colTbl = Table_instance.__colnames
-        local keyTbl = Table_instance.__foreign_keys
-
-        -- copy column arguments to new table instance
-        for _, colname in ipairs(self.__columnCreateOrder__) do
-
-            local coltype = args[colname];
-            coltype.name = colname
-            coltype.__table__ = Table_instance
-
-            colTbl[#colTbl + 1] = coltype
-
-            if coltype.settings.foreign_key then
-                keyTbl[#keyTbl + 1] = coltype
-            end
-        end
-
-        setmetatable(Table_instance, {
-            __call = Table_instance.create,
-            __index = Table_instance.__index
-        })
-
-        All_Tables[self.__tablename__] = Table_instance
-
-        -- Create new table if needed
-        if Config.newtable then
-            self:create_table(Table_instance)
-        end
-
-        return Table_instance
-    end
-
-    setmetatable(Table, {__call = Table.new})
-
-    return Table, Field, OrderBy
+local function newProperty(parse_fn)
+	return function(col_name)
+		local ins = { cls_type = kAGGREGATOR, col_name = col_name }
+		return setmetatable(ins, { __tostring = parse_fn, __concat = function(l, r)
+			return tostring(l) .. tostring(r)
+		end })
+	end
 end
-
--- Database settings
-local function _createDatabaseInstance(_connect, BACKTRACE)
-    return {
-        -- Database connect instance
-        connect = _connect,
-
-        -- Execute SQL query
-        execute = function (self, query)
-            if self.connect == nil then
-                BACKTRACE(ERROR, "Database disconnected")                
-                return
-            else
-                BACKTRACE(DEBUG, query)
-            end
-
-            local result = self.connect:execute(query)
-
-            if result then
-                return result
-            else
-                BACKTRACE(WARNING, "Wrong SQL query")
-            end
-        end,
-
-        -- Return insert query id
-        insert = function (self, query)
-            local _cursor = self:execute(query)
-            return 1
-        end,
-
-        -- get parced data
-        rows = function (self, query, own_table)
-            local _cursor = self:execute(query)
-            local data = {}
-
-            if _cursor then
-                local row = _cursor:fetch({}, "a")
-                local current_row = {}
-
-                while row do
-                    for colname, value in tpairs(row) do
-                        local current_table, colname = _divided_into(colname, "__")
-
-                        if current_table == own_table.__tablename__ then
-                            current_row[colname] = value
-                        else
-                            if not current_row[current_table] then
-                                current_row[current_table] = {}
-                            end
-
-                            current_row[current_table][colname] = value
-                        end
-                    end
-
-                    data[#data + 1] = current_row
-
-                    current_row = {}
-                    row = _cursor:fetch({}, "a")
-                end
-            end
-
-            return data
-        end
-    }
+local DBOrderBy = { ASC = newProperty(function(self)
+	return "`" .. self.tbl_name .. "`.`" .. self.col_name .. "` ASC"
+end), DESC = newProperty(function(self)
+	return "`" .. self.tbl_name .. "`.`" .. self.col_name .. "` DESC"
+end), MAX = newProperty(function(self)
+	return "MAX(`" .. self.tbl_name .. "`.`" .. self.col_name .. "`)"
+end), MIN = newProperty(function(self)
+	return "MIN(`" .. self.tbl_name .. "`.`" .. self.col_name .. "`)"
+end), COUNT = newProperty(function(self)
+	return "COUNT(`" .. self.tbl_name .. "`.`" .. self.col_name .. "`)"
+end), SUM = newProperty(function(self)
+	return "SUM(" .. self.col_name .. ")"
+end) }
+local function _escapeValue(db_ins, tbl_ins, colname, colvalue)
+	local coltype = tbl_ins:getColumn(colname)
+	if coltype and coltype.settings.escape_value then
+		local ftype = coltype.field._ftype
+		if ftype:find("text") or ftype:find("char") then
+			colvalue = db_ins.connect:escape(colvalue)
+		end
+	end
+	return colvalue
 end
-
-local defaultConfig = {
-    newtable = true,
-    DEBUG = true,
-    TRACE = true,
-    -- database settings
-    type = "sqlite3",
-    -- if you use sqlite set database path value
-    -- if not set a database name
-    path = "database.db",
-    -- not sqlite db settings
-    host = nil,
-    port = nil,
-    username = nil,
-    password = nil
-}
-
-local dummyTrace = function() end
-
-local function _new(config)
-    if not config then
-        print("[SQL:Startup] Using default config")
-        config = defaultConfig
-    else
-        config.type = config.type or defaultConfig.type
-        config.path = config.path or defaultConfig.path        
-    end
-    
-    local SqlEnv, _connect
-    
-    -- Get database by settings
-    if config.type == SQLITE then
-        local luasql = require("luasql.sqlite3")
-        SqlEnv = luasql.sqlite3()
-        _connect = SqlEnv:connect(config.path)
-        print("[SQL-ORM] Connect " .. SQLITE, config.path)
-    elseif config.type == MYSQL then
-        local luasql = require("luasql.mysql")
-        SqlEnv = luasql.mysql()
-        print("[SQL-ORM] Connect " .. MYSQL, config.path, config.username, config.password, config.host, config.port)
-        _connect = SqlEnv:connect(config.path, config.username, config.password, config.host, config.port)
-    elseif config.type == POSTGRESQL then
-        local luasql = require("luasql.postgres")
-        SqlEnv = luasql.postgres()
-        print("[SQL-ORM] Connect " .. POSTGRESQL, config.path, config.username, config.password, config.host, config.port)
-        _connect = SqlEnv:connect(config.path, config.username, config.password, config.host, config.port)
-    else
-        print(ERROR, "Database type not suported '" .. tostring(config.type) .. "'")
-        return nil
-    end
-    
-    if not _connect then
-        print(ERROR, "[SQL-ORM] Connect problem !")
-        return nil
-    end
-    
-    -- if DB.newtable then
-    --     BACKTRACE(INFO, "Remove old database")
-    
-    --     if DB.type == SQLITE then
-    --         os.remove(DB.path)
-    --     else
-    --         _connect:execute('DROP DATABASE `' .. DB.path .. '`')
-    --     end
-    -- end
-
-    local _print_trace = dummyTrace
-
-    if config.TRACE or config.DEBUG then
-        _print_trace = function(tracetype, message)
-            if config.TRACE then
-                if tracetype == ERROR then
-                    print("[SQL:Error] " .. message)
-                    os.exit()
-        
-                elseif tracetype == WARNING then
-                    print("[SQL:Warning] " .. message)
-        
-                elseif tracetype == INFO then
-                    print("[SQL:Info] " .. message)
-                end
-            end
-        
-            if config.DEBUG and tracetype == DEBUG then
-                print("[SQL:Debug] " .. message)
-            end
-        end    
-    end
-
-    local dbInstance = _createDatabaseInstance(_connect, _print_trace)
-    local Table, Field, OrderBy = _createDatabaseEnv(config, dbInstance, _print_trace)
-    return {
-        close = function()
-            print("Disconnect " .. config.type .. ": " .. config.path)
-            if _connect and SqlEnv then            
-                _connect:close()
-                SqlEnv:close()
-            end
-            _connect = nil
-            SqlEnv = nil
-        end,
-        Table = Table,
-        Field = Field,
-        OrderBy = OrderBy,
-        tablePairs = tpairs,        
-    }
+local _db_query_list = nil
+local _db_table = nil
+local DBSelect = { __tn = 'DBSelect', __tk = 'class', __st = nil }
+do
+	local __st = nil
+	local __ct = DBSelect
+	__ct.__ct = __ct
+	__ct.isKindOf = function(c, a) return a and c and ((c.__ct == a) or (c.__st and c.__st:isKindOf(a))) or false end
+	-- declare class var and methods
+	__ct._config = false
+	__ct._db_ins = false
+	__ct._tbl_ins = false
+	__ct._rules = false
+	function __ct:init(tbl_ins)
+		self._config = tbl_ins.config
+		self._db_ins = tbl_ins.db_ins
+		self._tbl_ins = tbl_ins
+		self._rules = { where = {  }, having = {  }, limit = nil, offset = nil, order = {  }, group = {  }, columns = { join = {  }, include = {  } } }
+	end
+	function __ct:_print(ttype, msg)
+		self._config:print(ttype, msg)
+	end
+	function __ct:buildEquation(colname, value)
+		local db_ins = self._db_ins
+		local tbl_ins = self._tbl_ins
+		local result = ""
+		if _endWith(colname, kWhere.IS_NULL) then
+			colname = _cutEnd(colname, kWhere.IS_NULL)
+			if value then
+				result = " IS NULL"
+			else 
+				result = " NOT NULL"
+			end
+		elseif _endWith(colname, kWhere.IN) or _endWith(colname, kWhere.NOT_IN) then
+			local rule = _endWith(colname, kWhere.IN) and kWhere.IN or kWhere.NOT_IN
+			if _isTable(value) and #value > 0 then
+				colname = _cutEnd(colname, rule)
+				local tbl_column = tbl_ins:getColumn(colname)
+				local tbl_in = {  }
+				for counter, val in pairs(value) do
+					tbl_in[#tbl_in + 1] = tbl_column.field.as(val)
+				end
+				if rule == kWhere.IN then
+					result = " IN (" .. _tableJoin(tbl_in) .. ")"
+				elseif rule == kWhere.NOT_IN then
+					result = " NOT IN (" .. _tableJoin(tbl_in) .. ")"
+				end
+			end
+		else 
+			local conditionPrepend = ""
+			if _endWith(colname, kWhere.LESS_THEN) and _isNumber(value) then
+				colname = _cutEnd(colname, kWhere.LESS_THEN)
+				conditionPrepend = " < "
+			elseif _endWith(colname, kWhere.MORE_THEN) and _isNumber(value) then
+				colname = _cutEnd(colname, kWhere.MORE_THEN)
+				conditionPrepend = " > "
+			elseif _endWith(colname, kWhere.EQ_OR_LESS_THEN) and _isNumber(value) then
+				colname = _cutEnd(colname, kWhere.EQ_OR_LESS_THEN)
+				conditionPrepend = " <= "
+			elseif _endWith(colname, kWhere.EQ_OR_MORE_THEN) and _isNumber(value) then
+				colname = _cutEnd(colname, kWhere.EQ_OR_MORE_THEN)
+				conditionPrepend = " >= "
+			else 
+				conditionPrepend = " = "
+			end
+			value = _escapeValue(db_ins, tbl_ins, colname, value)
+			local tbl_column = tbl_ins:getColumn(colname)
+			result = conditionPrepend .. tbl_column.field.as(value)
+		end
+		if tbl_ins:hasColumn(colname) then
+			local parse_column, _ = tbl_ins:column(colname)
+			result = parse_column .. result
+		end
+		return result
+	end
+	function __ct:updateColNames(list_of_cols)
+		local tbl_ins = self._tbl_ins
+		local tbl_name = tbl_ins.tbl_name
+		local result = {  }
+		for _, col in ipairs(list_of_cols) do
+			if _isTable(col) and col.cls_type == kAGGREGATOR then
+				col.tbl_name = tbl_name
+				result[#result + 1] = col
+			else 
+				local parsed_column, _ = tbl_ins:column(col)
+				result[#result + 1] = parsed_column
+			end
+		end
+		return result
+	end
+	function __ct:buildCondition(rules, start_with)
+		local counter = 0
+		local condition = start_with
+		for colname, value in pairs(rules) do
+			local equation = self:buildEquation(colname, value)
+			if counter > 0 then
+				equation = "AND " .. equation
+			end
+			condition = condition .. " " .. equation
+			counter = counter + 1
+		end
+		return condition
+	end
+	function __ct:hasForeignKeyTable(left_table, right_table)
+		local foreign_type_array = left_table:getForeignTypeArray()
+		for _, coltype in ipairs(foreign_type_array) do
+			if coltype.settings.to_tbl_name == right_table.tbl_name then
+				return true
+			end
+		end
+	end
+	function __ct:buildJoin()
+		local result_join = ""
+		for _, value in ipairs(self._rules.columns.join) do
+			local left_table = value[1]
+			local right_table = value[2]
+			local mode = value[3]
+			local tbl_name = left_table.tbl_name
+			local join_mode = ""
+			if mode == kJoin.JOIN_INNER then
+				join_mode = "INNER JOIN"
+			elseif mode == kJoin.JOIN_LEFT then
+				join_mode = "LEFT OUTER JOIN"
+			elseif mode == kJoin.JOIN_RIGHT then
+				join_mode = "RIGHT OUTER JOIN"
+			elseif mode == kJoin.JOIN_FULL then
+				join_mode = "FULL OUTER JOIN"
+			else 
+				self:_print(kLog.WARNING, "Not valid join mode " .. mode)
+			end
+			if self:hasForeignKeyTable(right_table, left_table) then
+				left_table, right_table = right_table, left_table
+				tbl_name = right_table.tbl_name
+			elseif not self:hasForeignKeyTable(left_table, right_table) then
+				self:_print(kLog.WARNING, "Not valid tables links")
+			end
+			local foreign_type_array = left_table:getForeignTypeArray()
+			for _, coltype in ipairs(foreign_type_array) do
+				if coltype.settings.to_tbl_name == right_table.tbl_name then
+					local col_name = coltype.name
+					result_join = result_join .. " \n" .. join_mode .. " `" .. tbl_name .. "` ON "
+					local parsed_column, _ = left_table:column(col_name)
+					result_join = result_join .. parsed_column
+					parsed_column, _ = right_table:column(kID)
+					result_join = result_join .. " = " .. parsed_column
+					break
+				end
+			end
+		end
+		return result_join
+	end
+	function __ct:buildIncluding(tbl_ins)
+		local inc_array = {  }
+		if not tbl_ins then
+			tbl_ins = self._tbl_ins
+		end
+		local col_type_array = tbl_ins:getColTypeArray()
+		for _, column in ipairs(col_type_array) do
+			local colname, colname_as = tbl_ins:column(column.name)
+			inc_array[#inc_array + 1] = colname .. " AS " .. colname_as
+		end
+		return _tableJoin(inc_array)
+	end
+	function __ct:buildSelect()
+		local join = ""
+		local select_result = "SELECT " .. self:buildIncluding()
+		if #self._rules.columns.join > 0 then
+			local unique_tables = { self._tbl_ins }
+			for _, values in ipairs(self._rules.columns.join) do
+				local left_table = values[1]
+				local right_table = values[2]
+				if not _tableHasValue(unique_tables, left_table) then
+					unique_tables[#unique_tables + 1] = left_table
+					select_result = select_result .. ", " .. self:buildIncluding(left_table)
+				end
+				if not _tableHasValue(unique_tables, right_table) then
+					unique_tables[#unique_tables + 1] = right_table
+					select_result = select_result .. ", " .. self:buildIncluding(right_table)
+				end
+			end
+			join = self:buildJoin()
+		end
+		if #self._rules.columns.include > 0 then
+			local aggregators = {  }
+			for _, value in ipairs(self._rules.columns.include) do
+				_, as = self._tbl_ins:column(value.as)
+				aggregators[#aggregators + 1] = value[1] .. " AS " .. as
+			end
+			select_result = select_result .. ", " .. _tableJoin(aggregators)
+		end
+		select_result = select_result .. " FROM `" .. self._tbl_ins.tbl_name .. "`"
+		if join then
+			select_result = select_result .. " " .. join
+		end
+		if next(self._rules.where) then
+			local condition = self:buildCondition(self._rules.where, "\nWHERE")
+			select_result = select_result .. " " .. condition
+		end
+		if #self._rules.group > 0 then
+			local rule = self:updateColNames(self._rules.group)
+			rule = _tableJoin(rule)
+			select_result = select_result .. " \nGROUP BY " .. rule
+		end
+		if next(self._rules.having) and self._rules.group then
+			local condition = self:buildCondition(self._rules.having, "\nHAVING")
+			select_result = select_result .. " " .. condition
+		end
+		if #self._rules.order > 0 then
+			local rule = self:updateColNames(self._rules.order)
+			rule = _tableJoin(rule)
+			select_result = select_result .. " \nORDER BY " .. rule
+		end
+		if self._rules.limit then
+			select_result = select_result .. " \nLIMIT " .. self._rules.limit
+		end
+		if self._rules.offset then
+			select_result = select_result .. " \nOFFSET " .. self._rules.offset
+		end
+		return self._db_ins:rows(select_result, self._tbl_ins)
+	end
+	function __ct:addColToTable(col_table, order_list)
+		if _isStr(order_list) and self._tbl_ins:hasColumn(order_list) then
+			col_table[#col_table + 1] = order_list
+		elseif _isTable(order_list) then
+			for _, column in ipairs(order_list) do
+				if (_isTable(column) and column.cls_type == kAGGREGATOR and self._tbl_ins:hasColumn(column.col_name)) or self._tbl_ins:hasColumn(column) then
+					col_table[#col_table + 1] = column
+				end
+			end
+		else 
+			self:_print(kLog.WARNING, "Not a string and not a table (" .. tostring(order_list) .. ")")
+		end
+	end
+	function __ct:include(column_list)
+		if _isTable(column_list) then
+			local tbl = self._rules.columns.include
+			for _, value in ipairs(column_list) do
+				if _isTable(value) and value.as and value[1] and value[1]._clstype == kAGGREGATOR then
+					tbl[#tbl + 1] = value
+				else 
+					self:_print(kLog.WARNING, "Not valid aggregator syntax")
+				end
+			end
+		else 
+			self:_print(kLog.WARNING, "You can include only table type data")
+		end
+		return self
+	end
+	function __ct:_join(left_table, mode, right_table)
+		if not right_table then
+			right_table = self._tbl_ins
+		end
+		if left_table.tbl_name then
+			local tbl = self._rules.columns.join
+			tbl[#tbl + 1] = { left_table, right_table, mode }
+		else 
+			self:_print(kLog.WARNING, "Not table in join")
+		end
+		return self
+	end
+	function __ct:join(left_table, right_table)
+		self:_join(left_table, kJoin.JOIN_INNER, right_table)
+		return self
+	end
+	function __ct:left_join(left_table, right_table)
+		self:_join(left_table, kJoin.JOIN_LEFT, right_table)
+		return self
+	end
+	function __ct:right_join(left_table, right_table)
+		self:_join(left_table, kJoin.JOIN_RIGHT, right_table)
+		return self
+	end
+	function __ct:full_join(left_table, right_table)
+		self:_join(left_table, kJoin.JOIN_FULL, right_table)
+		return self
+	end
+	function __ct:where(args)
+		for col, value in pairs(args) do
+			self._rules.where[col] = value
+		end
+		return self
+	end
+	function __ct:limit(count)
+		if _isInt(count) then
+			self._rules.limit = count
+		else 
+			self:_print(kLog.WARNING, "You try set limit to not integer value")
+		end
+		return self
+	end
+	function __ct:offset(count)
+		if _isInt(count) then
+			self._rules.offset = count
+		else 
+			self:_print(kLog.WARNING, "You try set offset to not integer value")
+		end
+		return self
+	end
+	function __ct:orderBy(order_list)
+		self:addColToTable(self._rules.order, order_list)
+		return self
+	end
+	function __ct:groupBy(colname)
+		self:addColToTable(self._rules.group, colname)
+		return self
+	end
+	function __ct:having(args)
+		for col, value in pairs(args) do
+			self._rules.having[col] = value
+		end
+		return self
+	end
+	function __ct:update(data)
+		if not (_isTable(data)) then
+			self:_print(kLog.WARNING, "No data for global update")
+			return 
+		end
+		local tbl_ins = self._tbl_ins
+		local _update = "UPDATE `" .. tbl_ins.tbl_name .. "`"
+		local _set = ""
+		local _set_tbl = {  }
+		local i = 1
+		for colname, new_value in pairs(data) do
+			local coltype = tbl_ins:getColumn(colname)
+			if coltype and coltype.field.validator(new_value) then
+				_set = _set .. " `" .. colname .. "` = " .. coltype.field.as(new_value)
+				_set_tbl[i] = " `" .. colname .. "` = " .. coltype.field.as(new_value)
+				i = i + 1
+			else 
+				self:_print(kLog.WARNING, "Can't update value for column `" .. _toStr(colname) .. "`")
+			end
+		end
+		local _where = nil
+		if next(self._rules.where) then
+			_where = self:buildCondition(self._rules.where, "\nWHERE")
+		else 
+			self:_print(kLog.INFO, "No 'where' statement. All data update!")
+		end
+		if _set ~= "" then
+			if #_set_tbl < 2 then
+				_update = _update .. " SET " .. _set .. " " .. _where
+			else 
+				_update = _update .. " SET " .. table.concat(_set_tbl, ",") .. " " .. _where
+			end
+			self._db_ins:execute(_update)
+		else 
+			self:_print(kLog.WARNING, "No table columns for update")
+		end
+	end
+	function __ct:delete()
+		local _delete = "DELETE FROM `" .. self._tbl_ins.tbl_name .. "` "
+		if next(self._rules.where) then
+			_delete = _delete .. self:buildCondition(self._rules.where, "\nWHERE")
+		else 
+			self:_print(kLog.WARNING, "Try delete all values")
+		end
+		self._db_ins:execute(_delete)
+	end
+	function __ct:first()
+		self._rules.limit = 1
+		local data = self:all()
+		if data:count() == 1 then
+			return data[1]
+		end
+	end
+	function __ct:all()
+		return _db_query_list(self._tbl_ins, self:buildSelect())
+	end
+	-- declare end
+	local __imt = {
+		__tostring = function(t) return string.format("<class DBSelect: %p>", t) end,
+		__index = function(t, k)
+			local v = __ct[k]
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+	}
+	setmetatable(__ct, {
+		__tostring = function() return "<class DBSelect>" end,
+		__index = function(t, k)
+			local v = __st and __st[k]
+			if v ~= nil then rawset(__ct, k, v) end
+			return v
+		end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			return ins
+		end,
+	})
 end
-
-return {
-    new = _new
-}
+local DBQuery = { __tn = 'DBQuery', __tk = 'class', __st = nil }
+do
+	local __st = nil
+	local __ct = DBQuery
+	__ct.__ct = __ct
+	__ct.isKindOf = function(c, a) return a and c and ((c.__ct == a) or (c.__st and c.__st:isKindOf(a))) or false end
+	-- declare class var and methods
+	function __ct:init(tbl_ins, row_data)
+		rawset(self, 'save', DBQuery.save)
+		rawset(self, 'delete', DBQuery.delete)
+		rawset(self, 'foreign', DBQuery.foreign)
+		rawset(self, 'references', DBQuery.references)
+		self._config = tbl_ins.config
+		self._db_ins = tbl_ins.db_ins
+		self._tbl_ins = tbl_ins
+		self._data = {  }
+		self._fdata = {  }
+		self._rdata = {  }
+		if not row_data then
+			self:_print(kLog.WARNING, "Create empty row instance for table '" .. self._tbl_ins._tbl_name .. "'")
+			return false
+		else 
+			for colname, colvalue in pairs(row_data) do
+				if tbl_ins:hasColumn(colname, true) then
+					colvalue = tbl_ins:getColumn(colname).field.toType(colvalue)
+					self._data[colname] = { new = colvalue, old = colvalue }
+				else 
+					local ftbl_ins = self._db_ins:getTableWith(colname)
+					if ftbl_ins then
+						self._fdata[colname] = DBQuery(ftbl_ins, colvalue)
+						local rtbl = self._rdata[colname]
+						rtbl = rtbl or _db_query_list(ftbl_ins, {  })
+						rtbl:add(colvalue)
+						self._rdata[colname] = rtbl
+					end
+				end
+			end
+		end
+	end
+	function __ct:_print(ttype, msg)
+		self._config:print(ttype, msg)
+	end
+	function __ct:save()
+		if self.id then
+			return self:_update()
+		else 
+			return self:_add()
+		end
+	end
+	function __ct:delete()
+		local ret = 0
+		if self.id then
+			local delete = "DELETE FROM `" .. self._tbl_ins.tbl_name .. "` " .. "WHERE `" .. kID .. "` = " .. self.id
+			ret = self._db_ins:execute(delete)
+		end
+		self._data = {  }
+		self._fdata = {  }
+		self._rdata = {  }
+		return ret
+	end
+	function __ct:foreign(ftbl)
+		if _isStr(ftbl) then
+			return self._fdata[ftbl]
+		elseif _isTable(ftbl) and ftbl:isKindOf(_db_table) then
+			return self._fdata[ftbl.tbl_name]
+		end
+	end
+	function __ct:references(rtbl)
+		if _isStr(rtbl) then
+			return self._rdata[rtbl]
+		elseif _isTable(rtbl) and rtbl:isKindOf(_db_table) then
+			return self._rdata[rtbl.tbl_name]
+		end
+	end
+	function __ct.__ins_index(t, k)
+		if strchar(strbyte(k, 1)) == "_" then
+			return 
+		end
+		return true, t:_getCol(k)
+	end
+	function __ct:_getCol(colname)
+		local col = self._data[colname]
+		if col and col.new ~= nil then
+			return col.new
+		end
+	end
+	function __ct:_setCol(colname, colvalue, col)
+		col = col or self._data[colname]
+		if col and col.new ~= nil and colname ~= kID then
+			local coltype = self._tbl_ins:getColumn(colname)
+			if coltype and coltype.field.validator(colvalue) then
+				self._data[colname].old = col.new
+				self._data[colname].new = colvalue
+			else 
+				self:_print(kLog.WARNING, "Not valid column value for update")
+			end
+		end
+	end
+	function __ct:_add()
+		local db_ins = self._db_ins
+		local tbl_ins = self._tbl_ins
+		local insert = "INSERT INTO `" .. tbl_ins.tbl_name .. "` ("
+		local counter = 0
+		local values = ""
+		local col_type_array = self._tbl_ins:getColTypeArray()
+		for _, tbl_column in ipairs(col_type_array) do
+			local colname = tbl_column.name
+			if colname ~= kID then
+				local value = self:_getCol(colname)
+				if value ~= nil then
+					if tbl_column.field.validator(value) then
+						value = _escapeValue(db_ins, tbl_ins, colname, value)
+						value = tbl_column.field.as(value)
+					else 
+						self:_print(kLog.WARNING, "Wrong type for table '" .. tbl_ins.tbl_name .. "' in column '" .. tostring(colname) .. "'")
+						return false
+					end
+				elseif tbl_column.settings.default_value then
+					value = tbl_column.field.as(tbl_column.settings.default_value)
+				else 
+					value = "NULL"
+				end
+				colname = "`" .. colname .. "`"
+				if counter ~= 0 then
+					colname = ", " .. colname
+					value = ", " .. value
+				end
+				values = values .. value
+				insert = insert .. colname
+				counter = counter + 1
+			end
+		end
+		insert = insert .. ") \n\t  VALUES (" .. values .. ")"
+		local ret = db_ins:insert(insert)
+		self._data.id = { new = ret }
+		return ret
+	end
+	function __ct:_update()
+		local db_ins = self._db_ins
+		local tbl_ins = self._tbl_ins
+		local update = "UPDATE `" .. tbl_ins.tbl_name .. "` "
+		local equation_for_set = {  }
+		for colname, colinfo in ipairs(self._data) do
+			if colinfo.old ~= colinfo.new and colname ~= kID then
+				local coltype = tbl_ins:getColumn(colname)
+				if coltype and coltype.field.validator(colinfo.new) then
+					local colvalue = _escapeValue(db_ins, tbl_ins, colname, colinfo.new)
+					local set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
+					equation_for_set[#equation_for_set + 1] = set
+					print("--- equaltion", set)
+				else 
+					self:_print(kLog.WARNING, "Can't update value for column `" .. _toStr(colname) .. "`")
+				end
+			end
+		end
+		local set = _tableJoin(equation_for_set)
+		if set ~= "" then
+			update = update .. " SET " .. set .. "\n\t WHERE `" .. kID .. "` =" .. self.id
+			return db_ins:execute(update)
+		else 
+			return false
+		end
+	end
+	-- declare end
+	local __imt = {
+		__index = function(t, k)
+			local ok, v = __ct.__ins_index(t, k)
+			if ok then return v else v = __ct[k] end
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+		__tostring = function(t)
+			return strfmt("<Query(%s)#%d: %p>", t._tbl_ins.tbl_name, tonumber(t.id or 0), t)
+		end,
+		__newindex = function(t, k, v)
+			if strchar(strbyte(k, 1)) ~= "_" then
+				local col = t._data[k]
+				if col then
+					t:_setCol(k, v, col)
+					return 
+				end
+			end
+			rawset(t, k, v)
+		end,
+	}
+	setmetatable(__ct, {
+		__tostring = function() return "<class DBQuery>" end,
+		__index = function(t, k)
+			local v = __st and __st[k]
+			if v ~= nil then rawset(__ct, k, v) end
+			return v
+		end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			return ins
+		end,
+	})
+end
+local DBQueryList = { __tn = 'DBQueryList', __tk = 'class', __st = nil }
+do
+	local __st = nil
+	local __ct = DBQueryList
+	__ct.__ct = __ct
+	__ct.isKindOf = function(c, a) return a and c and ((c.__ct == a) or (c.__st and c.__st:isKindOf(a))) or false end
+	-- declare class var and methods
+	__ct._config = false
+	__ct._tbl_ins = false
+	__ct._stack = false
+	function __ct:init(tbl_ins, rows)
+		self._config = tbl_ins.config
+		self._tbl_ins = tbl_ins
+		self._tbl_name = tbl_ins.tbl_name
+		self._stack = {  }
+		for _, row in ipairs(rows) do
+			local cur_query = self:withId(_toNumber(row.id))
+			if cur_query then
+				local db_ins = self._tbl_ins.db_ins
+				local rdata = cur_query._rdata
+				for key, value in pairs(row) do
+					if _isTable(value) and rdata[key] then
+						local rtbl_ins = db_ins:getTableWith(key)
+						rdata[key]:add(DBQuery(rtbl_ins, value))
+					end
+				end
+			else 
+				self:add(DBQuery(tbl_ins, row))
+			end
+		end
+	end
+	function __ct:print(ttype, msg)
+		self._config:print(ttype, msg)
+	end
+	function __ct.__ins_index(t, k)
+		if _isInt(k) and k >= 1 then
+			return true, t._stack[k]
+		end
+	end
+	function __ct:withId(id)
+		if _isInt(id) then
+			for _, query in pairs(self._stack) do
+				if query.id == id then
+					return query
+				end
+			end
+		else 
+			self:print(kLog.WARNING, "ID `" .. id .. "` is not integer value")
+		end
+	end
+	function __ct:add(query_ins)
+		self._stack[#self._stack + 1] = query_ins
+	end
+	function __ct:count()
+		return #self._stack
+	end
+	function __ct:delete()
+		for _, query in ipairs(self._stack) do
+			query:delete()
+		end
+		self._stack = {  }
+	end
+	-- declare end
+	local __imt = {
+		__index = function(t, k)
+			local ok, v = __ct.__ins_index(t, k)
+			if ok then return v else v = __ct[k] end
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+		__tostring = function(t)
+			return strfmt("<QueryList(%s)#%d: %p>", t._tbl_ins.tbl_name, #t._stack, t)
+		end,
+		__len = function(t)
+			return #t._stack
+		end,
+		__ipairs = function(t)
+			return ipairs(t._stack)
+		end,
+		__pairs = function(t)
+			return pairs(t._stack)
+		end,
+	}
+	setmetatable(__ct, {
+		__tostring = function() return "<class DBQueryList>" end,
+		__index = function(t, k)
+			local v = __st and __st[k]
+			if v ~= nil then rawset(__ct, k, v) end
+			return v
+		end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			return ins
+		end,
+	})
+end
+_db_query_list = DBQueryList
+local DBFieldBase = { __tn = 'DBFieldBase', __tk = 'class', __st = nil }
+do
+	local __st = nil
+	local __ct = DBFieldBase
+	__ct.__ct = __ct
+	__ct.isKindOf = function(c, a) return a and c and ((c.__ct == a) or (c.__st and c.__st:isKindOf(a))) or false end
+	-- declare class var and methods
+	__ct.field_type = "varchar"
+	__ct.field_name = "base"
+	function __ct:init(args)
+		self.field_name = args.field_name or DBFieldBase.field_name
+		self.field_type = args.field_type or DBFieldBase.field_type
+		self.validator = args.validator or DBFieldBase.validator
+		self.as = args.as or DBFieldBase.as
+		self.toType = args.toType or DBFieldBase.toType
+		self.settings = args.settings or {  }
+	end
+	function __ct.validator(value)
+		return true
+	end
+	function __ct.as(value)
+		return value
+	end
+	function __ct.toType(value)
+		return tostring(value)
+	end
+	function __ct.register(args)
+		args = args or {  }
+		return DBFieldBase(args)
+	end
+	-- declare end
+	local __imt = {
+		__index = function(t, k)
+			local v = __ct[k]
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+		__tostring = function(t)
+			return "<DBField(" .. t.field_name .. "): " .. t.field_type .. ">"
+		end,
+		__call = function(t, args)
+			local ins = { field = t, settings = { field_default = nil, null = false, unique = false, max_length = nil, primary_key = false, escape_value = false, foreign_key = false } }
+			ins.createType = function(self, config)
+				local ftype = self.field.field_type
+				if self.settings.max_length and self.settings.max_length > 0 then
+					ftype = ftype .. "(" .. self.settings.max_length .. ")"
+				end
+				if self.settings.primary_key then
+					ftype = ftype .. " PRIMARY KEY"
+				end
+				if self.settings.auto_increment then
+					if config.db_type == kDBType.SQLITE then
+						ftype = ftype .. " AUTOINCREMENT"
+					else 
+						ftype = ftype .. " AUTO_INCREMENT"
+					end
+				end
+				if self.settings.unique then
+					ftype = ftype .. " UNIQUE"
+				end
+				ftype = ftype .. (self.settings.null and " NULL" or " NOT NULL")
+				return ftype
+			end
+			for k, v in pairs(t.settings) do
+				ins.settings[k] = v
+			end
+			if args.max_length then
+				ins.settings.max_length = args.max_length
+			end
+			if args.null ~= nil then
+				ins.settings.null = args.null
+			end
+			if ins.settings.foreign_key and args.to_table and args.to_table:isKindOf(_db_table) then
+				ins.settings.to_tbl_name = args.to_table.tbl_name
+			end
+			if args.escape_value then
+				ins.settings.escape_value = true
+			end
+			if args.unique then
+				ins.settings.unique = args.unique
+			end
+			return ins
+		end,
+	}
+	setmetatable(__ct, {
+		__tostring = function() return "<class DBFieldBase>" end,
+		__index = function(t, k)
+			local v = __st and __st[k]
+			if v ~= nil then rawset(__ct, k, v) end
+			return v
+		end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			return ins
+		end,
+	})
+end
+local DBField = { PrimaryField = DBFieldBase.register({ field_name = "primary", field_type = "integer", validator = _isInt, settings = { null = true, primary_key = true, auto_increment = true }, toType = _toNumber }), IntegerField = DBFieldBase.register({ field_name = "integer", field_type = "integer", validator = _isInt, toType = _toNumber }), CharField = DBFieldBase.register({ field_name = "char", field_type = "varchar", validator = _isStr, as = _saveAsStr }), TextField = DBFieldBase.register({ field_name = "text", field_type = "text", validator = _isStr, as = _saveAsStr }), BooleanField = DBFieldBase.register({ field_name = "boolean", field_type = "integer", as = function(value)
+	return value and 1 or 0
+end, toType = function(value)
+	if _isBool(value) then
+		return value
+	else 
+		return value == 1 and true or false
+	end
+end }), BlobField = DBFieldBase.register({ field_name = "blob", field_type = "blob" }), DateTimeField = DBFieldBase.register({ field_name = "date_time", field_type = "integer", validator = function(value)
+	if (_isTable(value) and value.isdst ~= nil) or _isInt(value) then
+		return true
+	end
+end, as = function(value)
+	return _isInt(value) and value or os.time(value)
+end, toType = function(value)
+	return os.date("*t", _toNumber(value))
+end }), ForeignKey = DBFieldBase.register({ field_name = "foreign_key", field_type = "integer", settings = { null = true, foreign_key = true }, toType = _toNumber }), register = DBFieldBase.register }
+local DBTable = { __tn = 'DBTable', __tk = 'class', __st = nil }
+do
+	local __st = nil
+	local __ct = DBTable
+	__ct.__ct = __ct
+	__ct.isKindOf = function(c, a) return a and c and ((c.__ct == a) or (c.__st and c.__st:isKindOf(a))) or false end
+	-- declare class var and methods
+	function __ct:init(db_ins, tbl_config, tbl_column)
+		self.config = db_ins.config
+		self.db_ins = db_ins
+		self.tbl_name = tbl_config.table_name
+		self.col_names = {  }
+		local db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+		if _isTable(db_tbl) and db_tbl[self.tbl_name] then
+			for i, coltype in ipairs(db_tbl[self.tbl_name][2]) do
+				self.col_names[i] = coltype.name
+			end
+			return 
+		end
+		local column_order = { "id" }
+		if _isTable(tbl_config.column_order) then
+			for _, v in ipairs(tbl_config.column_order) do
+				column_order[#column_order + 1] = v
+			end
+		end
+		for k, _ in pairs(tbl_column) do
+			if not _tableHasValue(column_order, k) then
+				column_order[#column_order + 1] = k
+			end
+		end
+		tbl_column.id = DBField.PrimaryField({ auto_increment = true })
+		local col_type_array = {  }
+		local foreign_type_array = {  }
+		for i, colname in ipairs(column_order) do
+			local coltype = tbl_column[colname]
+			coltype.name = colname
+			coltype.tbl_name = self.tbl_name
+			col_type_array[i] = coltype
+			if coltype.settings.foreign_key then
+				foreign_type_array[#foreign_type_array + 1] = coltype
+			end
+			self.col_names[i] = colname
+		end
+		db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+		if _isTable(db_tbl) then
+			db_tbl[self.tbl_name] = { self, col_type_array, foreign_type_array }
+		end
+		if self.config.new_table then
+			self:createTable()
+		end
+	end
+	function __ct:print(ttype, msg)
+		self.config:print(ttype, msg)
+	end
+	function __ct:getColTypeArray()
+		local db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+		if _isTable(db_tbl) then
+			local tbl_array = db_tbl[self.tbl_name]
+			if _isTable(tbl_array) and #tbl_array > 1 then
+				return tbl_array[2]
+			end
+		end
+		return {  }
+	end
+	function __ct:getForeignTypeArray()
+		local db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+		if _isTable(db_tbl) then
+			local tbl_array = db_tbl[self.tbl_name]
+			if _isTable(tbl_array) and #tbl_array > 2 then
+				return tbl_array[3]
+			end
+		end
+		return {  }
+	end
+	function __ct:createTable()
+		local tbl_name = self.tbl_name
+		local col_type_array = self:getColTypeArray()
+		local foreign_type_array = self:getForeignTypeArray()
+		self:print(kLog.INFO, "Start create table: " .. tbl_name)
+		local create_query = "CREATE TABLE IF NOT EXISTS `" .. tbl_name .. "` \n("
+		local counter = 0
+		local column_query = ""
+		for _, coltype in ipairs(col_type_array) do
+			column_query = "\n     `" .. coltype.name .. "` " .. coltype:createType(self.config)
+			if counter > 0 then
+				column_query = "," .. column_query
+			end
+			create_query = create_query .. column_query
+			counter = counter + 1
+		end
+		for _, coltype in pairs(foreign_type_array) do
+			create_query = create_query .. (",\n     FOREIGN KEY(`" .. coltype.name .. "`)" .. " REFERENCES `" .. coltype.settings.to_tbl_name .. "`(`id`)")
+		end
+		create_query = create_query .. "\n)"
+		self.db_ins:execute(create_query)
+	end
+	function __ct.__ins_index(t, k)
+		if k == 'get' then
+			return true, DBSelect(t)
+		end
+	end
+	function __ct:column(column)
+		local tbl_name = self.tbl_name
+		if _isTable(column) and column._cls_type == kAGGREGATOR then
+			column.col_name = tbl_name .. column.col_name
+			column = column .. ""
+		end
+		return ("`" .. tbl_name .. "`.`" .. column .. "`"), (tbl_name .. "__" .. column)
+	end
+	function __ct:hasColumn(col_name, quiet)
+		for _, name in ipairs(self.col_names) do
+			if name == col_name then
+				return true
+			end
+		end
+		if not quiet then
+			self:print(kLog.WARNING, "Can't find column '" .. tostring(col_name) .. "' in table '" .. self.tbl_name .. "'")
+		end
+	end
+	function __ct:getColumn(col_name, quiet)
+		local col_type_array = self:getColTypeArray()
+		for _, tbl_column in ipairs(col_type_array) do
+			if tbl_column.name == col_name then
+				return tbl_column
+			end
+		end
+		if not quiet then
+			self:print(kLog.WARNING, "Can't find column '" .. tostring(col_name) .. "' in table '" .. self.tbl_name .. "'")
+		end
+	end
+	-- declare end
+	local __imt = {
+		__index = function(t, k)
+			local ok, v = __ct.__ins_index(t, k)
+			if ok then return v else v = __ct[k] end
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+		__tostring = function(t)
+			return strfmt("<DBTable(%s): %p>", t.tbl_name, t)
+		end,
+		__call = function(t, row_data)
+			return DBQuery(t, row_data)
+		end,
+	}
+	setmetatable(__ct, {
+		__tostring = function() return "<class DBTable>" end,
+		__index = function(t, k)
+			local v = __st and __st[k]
+			if v ~= nil then rawset(__ct, k, v) end
+			return v
+		end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			return ins
+		end,
+	})
+end
+_db_table = DBTable
+local DBInstance = { __tn = 'DBInstance', __tk = 'class', __st = nil }
+do
+	local __st = nil
+	local __ct = DBInstance
+	__ct.__ct = __ct
+	__ct.isKindOf = function(c, a) return a and c and ((c.__ct == a) or (c.__st and c.__st:isKindOf(a))) or false end
+	-- declare class var and methods
+	function __ct:init(config, db_env, db_conn)
+		self.config = config
+		self.db_env = db_env
+		self.db_conn = db_conn
+		G_DB_Ins_Tbl[config.db_path] = {  }
+	end
+	function __ct:deinit()
+		self:close()
+	end
+	function __ct:close()
+		if self.db_env and self.db_conn then
+			local ret_1 = self.db_conn:close()
+			local ret_2 = self.db_env:close()
+			self.db_conn = nil
+			self.db_env = nil
+			print("[SQL-ORM] Disconnect SQLite3", self.config.db_path, ret_1, ret_2)
+		end
+		G_DB_Ins_Tbl[self.config.db_path] = nil
+	end
+	function __ct:print(ttype, msg)
+		self.config:print(ttype, msg)
+	end
+	function __ct:execute(query)
+		if not (self.db_conn ~= nil) then
+			self:print(kLog.ERROR, "Database disconnected")
+			return 
+		end
+		self:print(kLog.DEBUG, query)
+		local result = self.db_conn:execute(query)
+		if result then
+			return result
+		else 
+			self:print(kLog.WARNING, "Wrong SQL query")
+		end
+	end
+	function __ct:insert(query)
+		return self:execute(query)
+	end
+	function __ct:rows(query, tbl_ins)
+		local cursor = self:execute(query)
+		local data = {  }
+		if cursor then
+			local row = cursor:fetch({  }, "a")
+			local current_row = {  }
+			while row do
+				for colname, value in pairs(row) do
+					local current_table, colname = _dividedInto(colname, "__")
+					if current_table == tbl_ins.tbl_name then
+						current_row[colname] = value
+					else 
+						if not current_row[current_table] then
+							current_row[current_table] = {  }
+						end
+						current_row[current_table][colname] = value
+					end
+				end
+				data[#data + 1] = current_row
+				current_row = {  }
+				row = cursor:fetch({  }, "a")
+			end
+			cursor:close()
+		end
+		return data
+	end
+	function __ct:getTableWith(tbl_name)
+		local db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+		if _isTable(db_tbl) then
+			return db_tbl[tbl_name][1]
+		end
+	end
+	-- declare end
+	local __imt = {
+		__tostring = function(t) return string.format("<class DBInstance: %p>", t) end,
+		__index = function(t, k)
+			local v = __ct[k]
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+		__gc = function(t) t:deinit() end,
+	}
+	setmetatable(__ct, {
+		__tostring = function() return "<class DBInstance>" end,
+		__index = function(t, k)
+			local v = __st and __st[k]
+			if v ~= nil then rawset(__ct, k, v) end
+			return v
+		end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			if _VERSION == "Lua 5.1" then
+				rawset(ins, '__gc_proxy', newproxy(true))
+				getmetatable(ins.__gc_proxy).__gc = function() ins:deinit() end
+			end
+			return ins
+		end,
+	})
+end
+local DBConfig = { __tn = 'DBConfig', __tk = 'struct' }
+do
+	local __ct = DBConfig
+	__ct.__ct = __ct
+	-- declare struct var and methods
+	__ct.new_table = false
+	__ct.log_debug = true
+	__ct.log_trace = true
+	__ct.db_type = kDBType.SQLITE
+	__ct.db_path = "database.db"
+	__ct.print = 1
+	function __ct:init(config)
+		self.print = self._noPrint
+		if not (_isTable(config)) then
+			return 
+		end
+		local keys = { "new_table", "log_debug", "log_trace", "db_type", "db_path" }
+		for _, k in ipairs(keys) do
+			self[k] = config[k]
+		end
+		if config.log_debug or config.log_trace then
+			self.print = self._ioPrint
+		end
+	end
+	function __ct:_noPrint()
+	end
+	function __ct:_ioPrint(ttype, msg)
+		if self.log_trace then
+			local __s = ttype
+			if __s == kLog.ERROR then
+				print("[SQL-ORM:Error] " .. msg)
+				os.exit()
+			elseif __s == kLog.WARNING then
+				print("[SQL-ORM:Warning] " .. msg)
+			elseif __s == kLog.INFO then
+				print("[SQL-ORM:Info] " .. msg)
+			end
+		end
+		if self.log_debug and ttype == kLog.DEBUG then
+			print("[SQL-ORM:Debug] " .. msg)
+		end
+	end
+	-- declare end
+	local __imt = {
+		__tostring = function(t) return string.format("<struct DBConfig: %p>", t) end,
+		__index = function(t, k)
+			local v = rawget(__ct, k)
+			if v ~= nil then rawset(t, k, v) end
+			return v
+		end,
+		__newindex = function(t, k, v) if rawget(__ct, k) ~= nil then rawset(t, k, v) end end,
+	}
+	DBConfig = setmetatable({}, {
+		__tostring = function() return "<struct DBConfig>" end,
+		__index = function(_, k) return rawget(__ct, k) end,
+		__newindex = function(_, k, v) if v ~= nil and rawget(__ct, k) ~= nil then rawset(__ct, k, v) end end,
+		__call = function(_, ...)
+			local ins = setmetatable({}, __imt)
+			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
+			return ins
+		end,
+	})
+end
+local function newDatabase(_, config)
+	if not config then
+		print("[SQL-ORM:Startup] Using default config")
+		config = DBConfig()
+	else 
+		config.db_type = config.db_type or DBConfig.db_type
+		config.db_path = config.db_path or DBConfig.db_path
+		config = DBConfig(config)
+	end
+	local db_tbl = G_DB_Ins_Tbl[config.db_path]
+	if not (not db_tbl) then
+		return db_tbl[1], db_tbl[2], DBField, DBOrderBy
+	end
+	local db_env = require("luasql.sqlite3").sqlite3()
+	local db_conn = db_env:connect(config.db_path)
+	if not (db_conn) then
+		print("[SQL-ORM] Connect SQLite3", config.db_path)
+		return 
+	end
+	print("[SQL-ORM] Connect SQLite3", config.db_path)
+	local db_ins = DBInstance(config, db_env, db_conn)
+	local DBTableWrapper = setmetatable({  }, { __call = function(_, tbl_config, tbl_column)
+		if _isTable(tbl_config) and _isTable(tbl_column) and _isStr(tbl_config.table_name) then
+			return DBTable(db_ins, tbl_config, tbl_column)
+		end
+	end })
+	db_tbl = G_DB_Ins_Tbl[config.db_path]
+	if db_tbl then
+		db_tbl[1] = db_ins
+		db_tbl[2] = DBTableWrapper
+	end
+	return db_ins, DBTableWrapper, DBField, DBOrderBy
+end
+return setmetatable({  }, { __call = newDatabase })

@@ -1,7 +1,9 @@
 
 All local variable version and all in one Lua4DaysORM from [itdxer/4DaysORM](https://github.com/itdxer/4DaysORM/)
 
-# Lua 4Days ORM 10 minutes tutorial #
+# Lua-ORM 10 minutes tutorial #
+
+support Lua 5.2+ or LuaJIT with `LUAJIT_ENABLE_LUA52COMPAT` support.
 
 ## Database configuration ##
 
@@ -14,55 +16,48 @@ local DBClass = require("sql-orm")
 then create instance:
 
 ```lua
-local instance = DBClass.new({
-	newtable = true,
-	type = "sqlite3",
-	path = "database.db",
-	DEBUG = true,
-	TRACE = true
+local DBIns, Table, Field, Or = DBClass({
+    new_table = true,
+    db_path = "database.db",
+    db_type = "sqlite3",
+    log_debug = true,
+    log_trace = true
 })
 ```
 and you can disconnect in the end:
 
 ```lua
-instance:close()
+DBIns:close()
 ```
 
 options below:
 
 **Development configurations:**
 
-1. `newtable` - if this value is `true`, then new table was created if not exsit (*`true` by default*).
-2. `TRACE` - if this value is `true`, than you will be able to see in console all Warnings, Errors and Information messages (*`true` by default*).
-3. `DEBUG` - if this value is `true`, you will be able to see in console all SQL queries (*`true` by default*).
+1. `new_table` - if this value is `true`, then new table was created if not exsit (*`true` by default*).
+2. `log_trace` - if this value is `true`, than you will be able to see in console all Warnings, Errors and Information messages (*`true` by default*).
+3. `log_debug` - if this value is `true`, you will be able to see in console all SQL queries (*`true` by default*).
 
 **Database configurations**
 
-1. `type` - by default `"sqlite3"`. Also it can be:
-    - `"mysql"` - for MySQL database (not tested)
-    - `"postgresql"` - for PostgreSQL database (*implemented soon*)
-2. `path` - this is a path to database file for `"sqlite3"`. For other databases this value contains database name. (*by default `"database.db"`*)
-3. `username` - database user name (*by default `nil`*)
-4. `password` - database password (*by default `nil`*)
-5. `host` - database host (*by default `nil`*)
-6. `port` - database host port  (*by default `nil`*)
+1. `db_type` - by default `"sqlite3"`. Also it can be:
+    - `"mysql"` - for MySQL database (NOT SUPPORTED right now)
+    - `"postgresql"` - for PostgreSQL database (NOT SUPPORTED right now)
+2. `db_path` - this is a path to database file for `"sqlite3"`. For other databases this value contains database name. (*by default `"database.db"`*)
 
 
-----------
+database instance creation also return tools to create Table, Field, and group them
 
-
-then we get tools to create Table, Field, and iterate them
-
-```lua
-local Table, Field, OrderBy, tablePairs = instance.Table, instance.Field, instance.OrderBy, instance.tablePairs
-```
 
 ## Create table ##
 
 
 ```lua
-local User = Table({
-    __tablename__ = "user",
+local User = Table(
+{
+    table_name = "user_t",
+},
+{
     username = Field.CharField({max_length = 100, unique = true}),
     password = Field.CharField({max_length = 50, unique = true}),
     age = Field.IntegerField({max_length = 2, null = true}),
@@ -74,15 +69,15 @@ local User = Table({
 
 For every table is created a column `id` with `PRIMARY KEY` field by default.
 
-`__tablename__` is required value which should contain the name of the table.
-`__columnCreateOrder__` is optional and can be used to define the order in which the columns will be created in the database table (the value must be a table of column names)
+`table_name` is required value which should contain the name of the table.
+`column_order` is optional and can be used to define the order in which the columns will be created in the database table (the value must be a table of column names)
 
 Also you can add different settings to your table fields
 
 1. `max_length` - it is a maximum allowable value of symbols that you can use in a string
-2. `unique` - if this value is `true ` then all the column's values are unique 
+2. `unique` - if this value is `true ` then all the column's values are unique
 3. `null` - can be `true` or `false`. If value is `true` then value in table will be saved as `NULL`.
-4. `default` - if you didn't add any value to this field - it is going to be saved as default value.
+4. `default_value` - if you didn't add any value to this field - it is going to be saved as default value.
 5. `escape_value` - If this value is `true` and the column type is a string type special characters will be escaped to prevent sql injection
 6. `primary_key` can not set, will be used in id column with auto increment
 
@@ -96,7 +91,7 @@ Supported types of table fields
 4. `BlobField` - Creates `BLOB` field
 5. `BooleanField` - Creates `BOOLEAN` field
 6. `DateTimeField` - Creates `INTEGER` field but brings back `os.date` instance 
-8. `ForeignKey` - Creates relationships between tables. 
+8. `ForeignKey` - Creates relationships between tables.
 
 Also you can create your types of table fields. But about it later.
 
@@ -219,6 +214,7 @@ But also we can **get all users** from table:
 ```lua
 local users = User.get:all()
 print("We get " .. users:count() .. " users")
+print("We get " .. #users .. " users")
 -- We get 5 users
 ```
 
@@ -251,7 +247,7 @@ Also you can sort your result by order. We want to sort users from the oldest to
 
 
 ```lua
-users = User.get:order_by({OrderBy.DESC('age')}):all()
+users = User.get:orderBy({OrderBy.DESC('age')}):all()
 print("First user id: " .. users[1].id)
 -- First user id: 3
 ```
@@ -259,7 +255,7 @@ print("First user id: " .. users[1].id)
 But we have 2 users with age 44. We can order them by name.
 
 ```lua
-users = User.get:order_by({OrderBy.DESC('age'), OrderBy.ASC('username')}):all()
+users = User.get:orderBy({OrderBy.DESC('age'), OrderBy.ASC('username')}):all()
 ```
     
 You can order your table query by other parameters too.
@@ -269,7 +265,7 @@ You can order your table query by other parameters too.
 And now try to group your results:
 
 ```lua
-users = User.get:group_by({'age'}):all()
+users = User.get:groupBy({'age'}):all()
 print('Find ' .. users:count() ..' users')
 -- Find 4 users
 ```
@@ -287,7 +283,7 @@ print("User id is: " .. user.id) -- User id is: 1
 And the same for `having`:
 
 ```lua
-users = User.get:group_by({'id'}):having({age = 44}):all()
+users = User.get:groupBy({'id'}):having({age = 44}):all()
 print("We get " .. users:count() .. " users with age 44")
 -- We get 2 users with age 44
 ```
@@ -315,8 +311,8 @@ user = User.get:where({age__lt = 30,
                        age__gt = 10,
                        age__gte = 10
                 })
-                :order_by({OrderBy.ASC('id')})
-                :group_by({'age', 'password'})
+                :orderBy({OrderBy.ASC('id')})
+                :groupBy({'age', 'password'})
                 :having({id__in = {1, 3, 5},
                          id__notin = {2, 4, 6},
                          username__null = false
@@ -334,11 +330,14 @@ Now we can create a join of tables. But before that we create some table with  `
 
 
 ```lua
-local News = Table({
-    __tablename__ = "group",
+local News = Table(
+{
+    table_name = "group",
+},
+{
     title = fields.CharField({max_length = 100, unique = false, null = false}),
     text = fields.TextField({null = true}),
-    create_user_id = fields.ForeignKey({to = User})
+    create_user_id = fields.ForeignKey({to_table = User})
 })
 ```
 
@@ -359,30 +358,29 @@ Now try to get all the news from the owner.
 
 ```lua
 local news = News.get:join(User):all()
-print("First news user id is: " .. news[1].user.id) -- First news user id is: 1
+print("First news user id is: " .. news[1]:foreign(User).id) -- First news user id is: 1
 ```
 
 But if we want to get all users and also to get three news for each user . We can do this by following example:
 
 ```lua
 local user = User.get:join(News):first()
-print("User " .. user.id .. " has " .. user.news_all:count() .. " news")
+print("User " .. user.id .. " has " .. user:references(News):count() .. " news")
 -- User 1 has 2 news
-    
-for _, user_news in tablePairs(user.news_all) do
+
+for _, user_news in iparis(user:references(News)) do
     print(user_news.title)
 end
 -- Some news
 -- Other title
 ```
 
-If you want to get all the values from tables you can combine table's names and prefix "_all". Like in previous example
+If you want to get all the foreign/references values in your table, you can use use below
 
 ```lua
-user.news_all
+local user_one = new_one:foreign(User) -- get News foreign value combine with one news
+local news_all = user_one:references(News) -- get User references News value (list) combine with one user
 ```
-
-`news_all` - returns a list of all news for current user or `nil` if news does not exist.
 
 ## Create column types ##
 
@@ -390,14 +388,15 @@ We can create a field type for every table. Try to create EmailField type:
 
 ```lua
 fields.EmailField = fields:register({
-    __type__ = "varchar",
+    field_name = "email",
+    field_type = "varchar",
     settings = {
         max_length = 100
     },
     validator = function (value)
         return value:match("[A-Za-z0-9%.%%%+%-]+@[A-Za-z0-9%.%%%+%-]+%.%w%w%w?%w?")
     end,
-    to_type = function (value)
+    toType = function (value)
         return value
     end,
     as = function (value)
@@ -408,20 +407,25 @@ fields.EmailField = fields:register({
 
 Let's make it step by step:
 
-`__type__` - this variable creates the appropriate type in the database (`"varchar"`, `"integer"`, `"boolean"`, `"date"`, `"datetime"`, `"text"`, ...).
+`field_name` - show in table `__tostring`
+
+`field_type` - this variable creates the appropriate type in the database (`"varchar"`, `"integer"`, `"boolean"`, `"date"`, `"datetime"`, `"text"`, ...).
 By default this value is `"varchar"`.
 
 `settings` -set a field value as default (*fields settings was describe later*). By default this value is empty.
 
 `validator` - validates the value of the variable. If value is correct - returns `true`. If value is not correct it returns `false` and doesn't update or add rows. By default it always returns `true`.
 
-`to_type` - parses value for correct sql save. By default it is not parsed value
+`toType` - parses value for correct sql save. By default it is not parsed value
 
 `as` - returns the value from lua to SQL. By default it is not parsed value.
 
 ```lua
-local UserEmails = Table({
-    __tablename__ = "user_emails",
+local UserEmails = Table(
+{
+    table_name = 'user_emails
+},
+{
     email = fields.EmailField(),
     user_id = fields.ForeignKey({ to = User })
 })
@@ -438,14 +442,14 @@ local user_email = UserEmails({
     user_id = user.id
 })
 user_email:save() -- This email was added!
-    
+
 user_email.email = "not email"
 user_email:save() -- This email wasn't updated
-    
+
 user_email.email = "valid@email.com"
 user_email:save() -- This email was updated
 ```
 
 ## Final ##
 
-All code you can see in example.lua file. Feel free to use it! Good luck!
+All code you can see in `example-orm.lua` file. Feel free to use it! Good luck!

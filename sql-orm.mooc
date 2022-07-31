@@ -1,0 +1,1625 @@
+--
+-- Copyright (c) 2022 lalawue
+--
+-- This library is free software; you can redistribute it and/or modify it
+-- under the terms of the MIT license. See LICENSE for details.
+--
+
+local pairs = pairs
+local type = type
+local setmetatable = setmetatable
+local tonumber = tonumber
+local tostring = tostring
+local mathmodf = math.modf
+local next = next
+local strsub = string.sub
+local strlen = string.len
+local strfind = string.find
+local strchar = string.char
+local strbyte = string.byte
+local strfmt = string.format
+
+-- Global
+kID = "id"
+kAGGREGATOR = "aggregator"
+
+kDBType = {
+    SQLITE = "sqlite3",
+    ORACLE = "oracle",
+    MYSQL = "mysql",
+    POSTGRESQL = "postgresql"
+}
+
+-- For WHERE equations ends
+kWhere = {
+    LESS_THEN = "__lt",
+    EQ_OR_LESS_THEN = "__lte",
+    MORE_THEN = "__gt",
+    EQ_OR_MORE_THEN = "__gte",
+    IN = "__in",
+    NOT_IN = "__notin",
+    IS_NULL = "__null"
+}
+
+-- Joining types
+kJoin = {
+    JOIN_INNER = 'i',
+    JOIN_LEFT = 'l',
+    JOIN_RIGHT = 'r',
+    JOIN_FULL = 'f'
+}
+
+-- Backtrace types
+kLog = {
+    ERROR = 'e',
+    WARNING = 'w',
+    INFO = 'i',
+    DEBUG = 'd'
+}
+
+--[[
+    [db_path] = {
+        1 = DBInstance,
+        2 = DBTableWraper,
+        [tbl_name] = {
+            [1] = tbl_ins,
+            [2] = {             -- col_type_array
+                [1] = col_ins,
+                ...
+            },
+            [3] = {             --- foreign_type_array
+                [1] = col_ins,
+                ...
+            }
+        },
+        ...
+    }
+]]
+G_DB_Ins_Tbl = {}
+
+fn _endWith(ss, se) {
+    return se == '' or strsub(ss, -strlen(se)) == se
+}
+
+fn _cutEnd(ss, se) {
+    return se == '' and ss or strsub(ss, 0, -#se - 1)
+}
+
+fn _dividedInto(ss, sep) {
+    s, e = strfind(ss, sep)
+    return strsub(ss, 1, s - 1), strsub(ss, e + 1, #ss)
+}
+
+-- MARK: Type interop
+
+fn _isInt(value) {
+    if type(value) == "number" {
+        integer, fractional = mathmodf(value)
+        return fractional == 0
+    }
+}
+
+fn _isNumber(value) {
+    return type(value) == "number"
+}
+
+fn _isStr(value) {
+    return type(value) == "string"
+}
+
+fn _isTable(value) {
+    return type(value) == "table"
+}
+
+fn _isBool(value) {
+    return type(value) == "boolean"
+}
+
+fn _toNumber(value) {
+    return tonumber(value)
+}
+
+fn _toStr(value) {
+    return tostring(value)
+}
+
+fn _tableHasValue(array, value) {
+    if _isTable(value) and value.colname {
+        value = value.colname
+    }
+
+    for _, array_value  in ipairs(array) {
+        if array_value == value {
+            return true
+        }
+    }
+}
+
+fn _tableJoin(array) {
+    result = ""
+    counter = 0
+    separator = ','
+
+    for _, value in ipairs(array) {
+        if counter > 0 {
+            value = separator .. value
+        }
+        result ..= value
+        counter += 1
+    }
+
+    return result
+}
+
+fn _saveAsStr(str) {
+    return "'" .. str .. "'"
+}
+
+-- MARK: Property
+
+fn newProperty(parse_fn) {
+    return fn(col_name) {
+        ins = {
+            cls_type = kAGGREGATOR,
+            col_name = col_name
+        }
+        return setmetatable(ins, {
+            __tostring = parse_fn,
+            __concat = { l, r in return tostring(l) .. tostring(r) }
+        })
+    }
+}
+
+-- MARK: order by
+
+DBOrderBy = {
+    ASC = newProperty({ self in
+        return "`" .. self.tbl_name .. "`.`" .. self.col_name .. "` ASC"
+    }),
+    DESC = newProperty({ self in
+        return "`" .. self.tbl_name .. "`.`" .. self.col_name .. "` DESC"
+    }),
+    MAX = newProperty({ self in
+        return "MAX(`" .. self.tbl_name .. "`.`" .. self.col_name .. "`)"
+    }),
+    MIN = newProperty({ self in
+        return "MIN(`" .. self.tbl_name .. "`.`" .. self.col_name .. "`)"
+    }),
+    COUNT = newProperty({ self in
+        return "COUNT(`" .. self.tbl_name .. "`.`" .. self.col_name .. "`)"
+    }),
+    SUM = newProperty({ self in
+        return "SUM(" .. self.col_name .. ")"
+    })
+}
+
+fn _escapeValue(db_ins, tbl_ins, colname, colvalue) {
+    coltype = tbl_ins:getColumn(colname)
+    if coltype and coltype.settings.escape_value {
+        ftype = coltype.field._ftype
+        if ftype:find("text") or ftype:find("char") {
+            -- See https://keplerproject.github.io/luasql/manual.html for a list of
+            -- database drivers that support this method
+            colvalue = db_ins.connect:escape(colvalue)
+        }
+    }
+    return colvalue
+}
+
+_db_query_list = nil
+_db_table = nil
+
+class DBSelect {
+
+    _config = false
+    _db_ins = false
+    _tbl_ins = false
+    _rules = false
+
+    fn init(tbl_ins) {
+        self._config = tbl_ins.config
+        self._db_ins = tbl_ins.db_ins
+        self._tbl_ins = tbl_ins
+        self._rules = {
+            -- Where equation rules
+            where = {},
+            -- Having equation rules
+            having = {},
+            -- limit
+            limit = nil,
+            -- offset
+            offset = nil,
+            -- order columns list
+            order = {},
+            -- group columns list
+            group = {},
+            --Columns rules
+            columns = {
+                -- Joining tables rules
+                join = {},
+                -- including columns list
+                include = {},
+            }
+        }
+    }
+
+    fn _print(ttype, msg) {
+        self._config:print(ttype, msg)
+    }
+
+    -- Build correctly equation for SQL searching
+    fn buildEquation(colname, value) {
+        db_ins = self._db_ins
+        tbl_ins = self._tbl_ins
+        result = ""
+
+        -- Special conditions that need no value escaping
+        if _endWith(colname, kWhere.IS_NULL) {
+            colname = _cutEnd(colname, kWhere.IS_NULL)
+
+            if value {
+                result = " IS NULL"
+            } else {
+                result = " NOT NULL"
+            }
+
+        } elseif _endWith(colname, kWhere.IN) or _endWith(colname, kWhere.NOT_IN) {
+            rule = _endWith(colname, kWhere.IN) and kWhere.IN or kWhere.NOT_IN
+
+            if _isTable(value) and #value > 0 {
+                colname = _cutEnd(colname, rule)
+                tbl_column = tbl_ins:getColumn(colname)
+                tbl_in = {}
+
+                for counter, val in pairs(value) {
+                    tbl_in[#tbl_in + 1] = tbl_column.field.as(val)
+                }
+
+                if rule == kWhere.IN {
+                    result = " IN (" .. _tableJoin(tbl_in) .. ")"
+                } elseif rule == kWhere.NOT_IN {
+                    result = " NOT IN (" .. _tableJoin(tbl_in) .. ")"
+                }
+            }
+
+        } else {
+
+            -- Conditions that need value escaping when it's enabled
+            conditionPrepend = ""
+
+            if _endWith(colname, kWhere.LESS_THEN) and _isNumber(value) {
+                colname = _cutEnd(colname, kWhere.LESS_THEN)
+                conditionPrepend = " < "
+
+            } elseif _endWith(colname, kWhere.MORE_THEN) and _isNumber(value) {
+                colname = _cutEnd(colname, kWhere.MORE_THEN)
+                conditionPrepend = " > "
+
+            } elseif _endWith(colname, kWhere.EQ_OR_LESS_THEN) and _isNumber(value) {
+                colname = _cutEnd(colname, kWhere.EQ_OR_LESS_THEN)
+                conditionPrepend = " <= "
+
+            } elseif _endWith(colname, kWhere.EQ_OR_MORE_THEN) and _isNumber(value) {
+                colname = _cutEnd(colname, kWhere.EQ_OR_MORE_THEN)
+                conditionPrepend = " >= "
+            } else {
+                conditionPrepend = " = "
+            }
+
+            value = _escapeValue(db_ins, tbl_ins, colname, value)
+            tbl_column = tbl_ins:getColumn(colname)
+            result = conditionPrepend .. tbl_column.field.as(value)
+        }
+
+        if tbl_ins:hasColumn(colname) {
+            parse_column, _ = tbl_ins:column(colname)
+            result = parse_column .. result
+        }
+
+        return result
+    }
+
+    -- Need for ASC and DESC columns
+    fn updateColNames(list_of_cols) {
+        tbl_ins = self._tbl_ins
+        tbl_name = tbl_ins.tbl_name
+        result = {}
+
+        for _, col in ipairs(list_of_cols) {
+            if _isTable(col) and col.cls_type == kAGGREGATOR {
+                col.tbl_name = tbl_name
+                result[#result + 1] = col
+            } else {
+                parsed_column, _ = tbl_ins:column(col)
+                result[#result + 1] = parsed_column
+            }
+        }
+
+        return result
+    }
+
+    -- Build condition for equation rules
+    ---------------------------------------------------
+    -- @param rules table list of columns
+    -- @param start_with string WHERE or HAVING
+    -- @return string parsed string for select equation
+    fn buildCondition(rules, start_with) {
+        counter = 0
+        condition = start_with
+
+        -- TODO: add OR
+        for colname, value in pairs(rules) {
+            equation = self:buildEquation(colname, value)
+
+            if counter > 0 {
+                equation = "AND " .. equation
+            }
+
+            condition = condition .. " " .. equation
+            counter = counter + 1
+        }
+
+        return condition
+    }
+
+    fn hasForeignKeyTable(left_table, right_table) {
+        foreign_type_array = left_table:getForeignTypeArray()
+        for _, coltype in ipairs(foreign_type_array) {
+            if coltype.settings.to_tbl_name == right_table.tbl_name {
+                return true
+            }
+        }
+    }
+
+    -- Build join tables rules
+    fn buildJoin() {
+        result_join = ""
+
+        for _, value in ipairs(self._rules.columns.join) {
+            left_table = value[1]
+            right_table = value[2]
+            mode = value[3]
+            tbl_name = left_table.tbl_name
+            join_mode = ""
+
+            if mode == kJoin.JOIN_INNER {
+                join_mode = "INNER JOIN"
+            } elseif mode == kJoin.JOIN_LEFT {
+                join_mode = "LEFT OUTER JOIN"
+            } elseif mode == kJoin.JOIN_RIGHT {
+                join_mode = "RIGHT OUTER JOIN"
+            } elseif mode == kJoin.JOIN_FULL {
+                join_mode = "FULL OUTER JOIN"
+            } else {
+                self:_print(kLog.WARNING, "Not valid join mode " .. mode)
+            }
+
+            if self:hasForeignKeyTable(right_table, left_table) {
+                left_table, right_table = right_table, left_table
+                tbl_name = right_table.tbl_name
+            } elseif not self:hasForeignKeyTable(left_table, right_table) {
+                self:_print(kLog.WARNING, "Not valid tables links")
+            }
+
+            foreign_type_array = left_table:getForeignTypeArray()
+            for _, coltype in ipairs(foreign_type_array) {
+                if coltype.settings.to_tbl_name == right_table.tbl_name {
+                    col_name = coltype.name
+
+                    result_join = result_join .. " \n" .. join_mode .. " `" .. tbl_name .. "` ON "
+
+                    parsed_column, _ = left_table:column(col_name)
+                    result_join = result_join .. parsed_column
+
+                    parsed_column, _ = right_table:column(kID)
+                    result_join = result_join .. " = " .. parsed_column
+
+                    break
+                }
+            }
+        }
+
+        return result_join
+    }
+
+    -- String with including data in select
+    --------------------------------------------
+    -- @tbl_ins {table|nil} Table instance
+    --
+    -- @return {string} comma separated fields
+    --------------------------------------------
+    fn buildIncluding(tbl_ins) {
+        inc_array = {}
+
+        if not tbl_ins {
+            tbl_ins = self._tbl_ins
+        }
+
+        col_type_array = tbl_ins:getColTypeArray()
+
+        -- get current column
+        for _, column in ipairs(col_type_array) {
+            colname, colname_as = tbl_ins:column(column.name)
+            inc_array[#inc_array + 1] = colname .. " AS " .. colname_as
+        }
+
+        return _tableJoin(inc_array)
+    }
+
+    -- Method for build select with rules
+    fn buildSelect() {
+        join = ""
+
+        select_result = "SELECT " .. self:buildIncluding()
+
+        -- Add join rules
+        if #self._rules.columns.join > 0 {
+            unique_tables = { self._tbl_ins }
+
+            for _, values in ipairs(self._rules.columns.join) {
+                left_table = values[1]
+                right_table = values[2]
+
+                if not _tableHasValue(unique_tables, left_table) {
+                    unique_tables[#unique_tables + 1] = left_table
+                    select_result = select_result .. ", " .. self:buildIncluding(left_table)
+                }
+
+                if not _tableHasValue(unique_tables, right_table) {
+                    unique_tables[#unique_tables + 1] = right_table
+                    select_result = select_result .. ", " .. self:buildIncluding(right_table)
+                }
+            }
+
+            join = self:buildJoin()
+        }
+
+        -- Check aggregators in select
+        if #self._rules.columns.include > 0 {
+            local aggregators = {}
+
+            for _, value in ipairs(self._rules.columns.include) {
+                _, as = self._tbl_ins:column(value.as)
+                aggregators[#aggregators + 1] = value[1] .. " AS " .. as
+            }
+
+            select_result = select_result .. ", " .. _tableJoin(aggregators)
+        }
+
+        select_result = select_result .. " FROM `" .. self._tbl_ins.tbl_name .. "`"
+
+        if join {
+            select_result = select_result .. " " .. join
+        }
+
+        -- Build WHERE
+        if next(self._rules.where) {
+            condition = self:buildCondition(self._rules.where, "\nWHERE")
+            select_result = select_result .. " " .. condition
+        }
+
+        -- Build GROUP BY
+        if #self._rules.group > 0 {
+            rule = self:updateColNames(self._rules.group)
+            rule = _tableJoin(rule)
+            select_result = select_result .. " \nGROUP BY " .. rule
+        }
+
+        -- Build HAVING
+        if next(self._rules.having) and self._rules.group {
+            condition = self:buildCondition(self._rules.having, "\nHAVING")
+            select_result = select_result .. " " .. condition
+        }
+
+        -- Build ORDER BY
+        if #self._rules.order > 0 {
+            rule = self:updateColNames(self._rules.order)
+            rule = _tableJoin(rule)
+            select_result = select_result .. " \nORDER BY " .. rule
+        }
+
+        -- Build LIMIT
+        if self._rules.limit {
+            select_result = select_result .. " \nLIMIT " .. self._rules.limit
+        }
+
+        -- Build OFFSET
+        if self._rules.offset {
+            select_result = select_result .. " \nOFFSET " .. self._rules.offset
+        }
+
+        return self._db_ins:rows(select_result, self._tbl_ins)
+    }
+
+    -- Add column to table
+    -------------------------------------------------
+    -- @col_table {table} table with column names
+    -- @colname {string/table} column name or list of column names
+    -------------------------------------------------
+    fn addColToTable(col_table, order_list) {
+        if _isStr(order_list) and self._tbl_ins:hasColumn(order_list) {
+            col_table[#col_table + 1] = order_list
+        } elseif _isTable(order_list) {
+            for _, column in ipairs(order_list) {
+                if (_isTable(column) and column.cls_type == kAGGREGATOR and self._tbl_ins:hasColumn(column.col_name))
+                    or self._tbl_ins:hasColumn(column)
+                {
+                    col_table[#col_table + 1] = column
+                }
+            }
+        } else {
+            self:_print(kLog.WARNING, "Not a string and not a table (" .. tostring(order_list) .. ")")
+        }
+    }
+
+    -- MARK: column filters
+
+    -- Including columns to select query
+    fn include(column_list) {
+        if _isTable(column_list) {
+            tbl = self._rules.columns.include
+            for _, value in ipairs(column_list) {
+                if _isTable(value) and value.as and value[1] and value[1]._clstype == kAGGREGATOR {
+                    tbl[#tbl + 1] = value
+                } else {
+                    self:_print(kLog.WARNING, "Not valid aggregator syntax")
+                }
+            }
+        } else {
+            self:_print(kLog.WARNING, "You can include only table type data")
+        }
+        return self
+    }
+
+    -- MARK: join table method
+
+    -- By default, join is INNER JOIN command
+    fn _join(left_table, mode, right_table) {
+        if not right_table {
+            right_table = self._tbl_ins
+        }
+        if left_table.tbl_name {
+            tbl = self._rules.columns.join
+            tbl[#tbl + 1] = {left_table, right_table, mode}
+        } else {
+            self:_print(kLog.WARNING, "Not table in join")
+        }
+        return self
+    }
+
+    fn join(left_table, right_table) {
+        self:_join(left_table, kJoin.JOIN_INNER, right_table)
+        return self
+    }
+
+    -- left outer joining command
+    fn left_join(left_table, right_table) {
+        self:_join(left_table, kJoin.JOIN_LEFT, right_table)
+        return self
+    }
+
+    -- right outer joining command
+    fn right_join(left_table, right_table) {
+        self:_join(left_table, kJoin.JOIN_RIGHT, right_table)
+        return self
+    }
+
+    -- full outer joining command
+    fn full_join(left_table, right_table) {
+        self:_join(left_table, kJoin.JOIN_FULL, right_table)
+        return self
+    }
+
+    -- MARK: select building methods
+
+    -- SQL Where query rules
+    fn where(args) {
+        for col, value in pairs(args) {
+            self._rules.where[col] = value
+        }
+        return self
+    }
+
+    -- Set returned data limit
+    fn limit(count) {
+        if _isInt(count) {
+            self._rules.limit = count
+        } else {
+            self:_print(kLog.WARNING, "You try set limit to not integer value")
+        }
+        return self
+    }
+
+    -- From which position start get data
+    fn offset(count) {
+        if _isInt(count) {
+            self._rules.offset = count
+        } else {
+            self:_print(kLog.WARNING, "You try set offset to not integer value")
+        }
+        return self
+    }
+
+    -- Order table
+    fn orderBy(order_list) {
+        self:addColToTable(self._rules.order, order_list)
+        return self
+    }
+
+    -- Group table
+    fn groupBy(colname) {
+        self:addColToTable(self._rules.group, colname)
+        return self
+    }
+
+    -- Having
+    fn having(args) {
+        for col, value in pairs(args) {
+            self._rules.having[col] = value
+        }
+        return self
+    }
+
+    -- MARK: Update data methods
+    fn update(data) {
+        guard _isTable(data) else {
+            self:_print(kLog.WARNING, "No data for global update")
+            return
+        }
+        tbl_ins = self._tbl_ins
+        _update = "UPDATE `" .. tbl_ins.tbl_name .. "`"
+        _set = ""
+        _set_tbl = {}
+        i=1
+
+        for colname, new_value in pairs(data) {
+            coltype = tbl_ins:getColumn(colname)
+
+            if coltype and coltype.field.validator(new_value) {
+                _set = _set .. " `" .. colname .. "` = " ..
+                    coltype.field.as(new_value)
+                _set_tbl[i] = " `" .. colname .. "` = " ..
+                    coltype.field.as(new_value)
+                i=i+1
+            } else {
+                self:_print(kLog.WARNING, "Can't update value for column `" .. _toStr(colname) .. "`")
+            }
+        }
+
+        -- Build WHERE
+        _where = nil
+        if next(self._rules.where) {
+            _where = self:buildCondition(self._rules.where, "\nWHERE")
+        } else {
+            self:_print(kLog.INFO, "No 'where' statement. All data update!")
+        }
+
+        if _set ~= "" {
+            if #_set_tbl<2 {
+                _update = _update .. " SET " .. _set .. " " .. _where
+            } else {
+                _update = _update .. " SET " .. table.concat(_set_tbl,",") .. " " .. _where
+            }
+            self._db_ins:execute(_update)
+        } else {
+            self:_print(kLog.WARNING, "No table columns for update")
+        }
+    }
+
+    -- MARK: Delete data methods
+
+    fn delete() {
+        _delete = "DELETE FROM `" .. self._tbl_ins.tbl_name .. "` "
+
+        -- Build WHERE
+        if next(self._rules.where) {
+            _delete = _delete .. self:buildCondition(self._rules.where, "\nWHERE")
+        } else {
+            self:_print(kLog.WARNING, "Try delete all values")
+        }
+        self._db_ins:execute(_delete)
+    }
+
+    -- MARK: Get select data methods
+
+    -- return one value
+    fn first() {
+        self._rules.limit = 1
+        data = self:all()
+
+        if data:count() == 1 {
+            return data[1]
+        }
+    }
+
+    -- Return list of values
+    fn all() {
+        return _db_query_list(self._tbl_ins, self:buildSelect())
+    }
+}
+
+class DBQuery {
+
+    fn init(tbl_ins, row_data) {
+        rawset(self, 'save', Self.save)
+        rawset(self, 'delete', Self.delete)
+        rawset(self, 'foreign', Self.foreign)
+        rawset(self, 'references', Self.references)
+        -- take over by __index or __newindex
+        self._config = tbl_ins.config
+        self._db_ins = tbl_ins.db_ins
+        self._tbl_ins = tbl_ins
+        self._data = {}
+        self._fdata = {} -- foreign data
+        self._rdata = {} -- references data
+        if not row_data {
+            self:_print(kLog.WARNING, "Create empty row instance for table '" ..
+                        self._tbl_ins._tbl_name .. "'")
+            return false
+        } else {
+            for colname, colvalue in pairs(row_data) {
+                if tbl_ins:hasColumn(colname, true) {
+                    colvalue = tbl_ins:getColumn(colname).field.toType(colvalue)
+                    self._data[colname] = { new = colvalue, old = colvalue }
+                } else {
+                    ftbl_ins = self._db_ins:getTableWith(colname)
+                    if ftbl_ins {
+                        self._fdata[colname] = DBQuery(ftbl_ins, colvalue)
+                        rtbl = self._rdata[colname]
+                        rtbl = rtbl or _db_query_list(ftbl_ins, {})
+                        rtbl:add(colvalue)
+                        self._rdata[colname] = rtbl
+                    }
+                }
+            }
+        }
+    }
+
+    fn _print(ttype, msg) {
+        self._config:print(ttype, msg)
+    }
+
+    fn save() {
+        if self.id {
+            return self:_update()
+        } else {
+            return self:_add()
+        }
+    }
+
+    fn delete() {
+        ret = 0
+        if self.id {
+            delete = "DELETE FROM `" .. self._tbl_ins.tbl_name .. "` " ..
+                     "WHERE `" .. kID .. "` = " .. self.id
+            ret = self._db_ins:execute(delete)
+        }
+        self._data = {}
+        self._fdata = {}
+        self._rdata = {}
+        return ret
+    }
+
+    -- return DBQuery with foregin key
+    fn foreign(ftbl) {
+        if _isStr(ftbl) {
+            return self._fdata[ftbl]
+        } elseif _isTable(ftbl) and ftbl:isKindOf(_db_table) {
+            return self._fdata[ftbl.tbl_name]
+        }
+    }
+
+    -- return QueryList with references key
+    fn references(rtbl) {
+        if _isStr(rtbl) {
+            return self._rdata[rtbl]
+        } elseif _isTable(rtbl) and rtbl:isKindOf(_db_table) {
+            return self._rdata[rtbl.tbl_name]
+        }
+    }
+
+    -- MARK: metamethod
+
+    fn __tostring(t) {
+        return strfmt("<Query(%s)#%d: %p>", t._tbl_ins.tbl_name, tonumber(t.id or 0), t)
+    }
+
+    fn __index(t, k) {
+        if strchar(strbyte(k,1)) == "_" {
+            return
+        }
+        return true, t:_getCol(k)
+    }
+
+    fn __newindex(t, k, v) {
+        if strchar(strbyte(k,1)) != "_" {
+            col = t._data[k]
+            if col {
+                t:_setCol(k, v, col)
+                return
+            }
+        }
+        rawset(t, k, v)
+    }
+
+    -- MARK: private
+
+    fn _getCol(colname) {
+        col = self._data[colname]
+        if col and col.new ~= nil {
+            return col.new
+        }
+    }
+
+    fn _setCol(colname, colvalue, col) {
+        col = col or self._data[colname]
+        if col and col.new ~= nil and colname ~= kID {
+            coltype = self._tbl_ins:getColumn(colname)
+
+            if coltype and coltype.field.validator(colvalue)  {
+                self._data[colname].old = col.new
+                self._data[colname].new = colvalue
+            } else {
+                self:_print(kLog.WARNING, "Not valid column value for update")
+            }
+        }
+    }
+
+    fn _add() {
+        db_ins = self._db_ins
+        tbl_ins = self._tbl_ins
+
+        insert = "INSERT INTO `" .. tbl_ins.tbl_name .. "` ("
+        counter = 0
+        values  = ""
+
+        col_type_array = self._tbl_ins:getColTypeArray()
+        for _, tbl_column in ipairs(col_type_array) {
+            colname = tbl_column.name
+
+            if colname ~= kID {
+                value = self:_getCol(colname)
+                if value ~= nil {
+                    if tbl_column.field.validator(value) {
+                        value = _escapeValue(db_ins, tbl_ins, colname, value)
+                        value = tbl_column.field.as(value)
+                    } else {
+                        self:_print(kLog.WARNING, "Wrong type for table '" .. tbl_ins.tbl_name ..
+                                    "' in column '" .. tostring(colname) .. "'")
+                        return false
+                    }
+                } elseif tbl_column.settings.default_value {
+                    value = tbl_column.field.as(tbl_column.settings.default_value)
+                } else {
+                    value = "NULL"
+                }
+
+                colname = "`" .. colname .. "`"
+
+                -- TODO: save in correct type
+                if counter ~= 0 {
+                    colname = ", " .. colname
+                    value = ", " .. value
+                }
+
+                values ..= value
+                insert ..= colname
+
+                counter += 1
+            }
+        }
+
+        insert = insert .. ") \n\t  VALUES (" .. values .. ")"
+
+        -- TODO: return valid ID
+        ret = db_ins:insert(insert)
+        self._data.id = { new = ret }
+        return ret
+    }
+
+    fn _update() {
+        db_ins = self._db_ins
+        tbl_ins = self._tbl_ins
+
+        update = "UPDATE `" .. tbl_ins.tbl_name .. "` "
+        equation_for_set = {}
+
+        for colname, colinfo in ipairs(self._data) {
+            if colinfo.old ~= colinfo.new and colname ~= kID {
+                coltype = tbl_ins:getColumn(colname)
+
+                if coltype and coltype.field.validator(colinfo.new) {
+                    colvalue = _escapeValue(db_ins, tbl_ins, colname, colinfo.new)
+                    set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
+
+                    equation_for_set[#equation_for_set + 1] = set
+                    print("--- equaltion", set)
+                } else {
+                    self:_print(kLog.WARNING, "Can't update value for column `" .. _toStr(colname) .. "`")
+                }
+            }
+        }
+
+        set = _tableJoin(equation_for_set)
+        if set ~= "" {
+            update = update .. " SET " .. set .. "\n\t WHERE `" .. kID .. "` =" .. self.id
+            return db_ins:execute(update)
+        } else {
+            return false
+        }
+    }
+}
+
+class DBQueryList {
+
+    _config = false
+    _tbl_ins = false
+    _stack = false
+
+    fn init(tbl_ins, rows) {
+        self._config = tbl_ins.config
+        self._tbl_ins = tbl_ins
+        self._tbl_name = tbl_ins.tbl_name
+        self._stack = {}
+
+        for _, row in ipairs(rows) {
+            cur_query = self:withId(_toNumber(row.id))
+            if cur_query {
+                -- if query.id exist, check references data
+                db_ins = self._tbl_ins.db_ins
+                rdata = cur_query._rdata
+                for key, value in pairs(row) {
+                    if _isTable(value) and rdata[key] {
+                        rtbl_ins = db_ins:getTableWith(key)
+                        rdata[key]:add(DBQuery(rtbl_ins, value))
+                    }
+                }
+            } else {
+                self:add(DBQuery(tbl_ins, row))
+            }
+        }
+    }
+
+    fn print(ttype, msg) {
+        self._config:print(ttype, msg)
+    }
+
+    -- MARK: metamethod
+
+    fn __tostring(t) {
+        return strfmt("<QueryList(%s)#%d: %p>", t._tbl_ins.tbl_name, #t._stack, t)
+    }
+
+    fn __index(t, k) {
+        if _isInt(k) and k >= 1 {
+            return true, t._stack[k]
+        }
+    }
+
+    fn __len(t) {
+        return #t._stack
+    }
+
+    fn __ipairs(t) {
+        return ipairs(t._stack)
+    }
+
+    fn __pairs(t) {
+        return pairs(t._stack)
+    }
+
+    -- MARK: public
+
+    fn withId(id) {
+        if _isInt(id) {
+            for _, query in pairs(self._stack) {
+                if query.id == id {
+                    return query
+                }
+            }
+        } else {
+            self:print(kLog.WARNING, "ID `" .. id .. "` is not integer value")
+        }
+    }
+
+    fn add(query_ins) {
+        self._stack[#self._stack + 1] = query_ins
+    }
+
+    fn count() {
+        return #self._stack
+    }
+
+    fn delete() {
+        for _, query in ipairs(self._stack) {
+            query:delete()
+        }
+        self._stack = {}
+    }
+}
+
+_db_query_list = DBQueryList
+
+
+class DBFieldBase {
+
+    field_type = "varchar"
+    field_name = "base"
+
+    -- settings = {
+    --     default_value = nil,
+    --     null = false,
+    --     unique = false,
+    --     max_length = nil,
+    --     primary_key = false,
+    --     escape_value = false,
+    --     foreign_key = false,
+    -- }
+
+    fn init(args) {
+        self.field_name = args.field_name or Self.field_name
+        self.field_type = args.field_type or Self.field_type
+        self.validator = args.validator or Self.validator
+        self.as = args.as or Self.as
+        self.toType = args.toType or Self.toType
+        self.settings = args.settings or {}
+    }
+
+    static fn validator(value) {
+        return true
+    }
+
+    static fn as(value) {
+        return value
+    }
+
+    static fn toType(value) {
+        return tostring(value)
+    }
+
+    fn __tostring(t) {
+        return "<DBField(" .. t.field_name .. "): " .. t.field_type .. ">"
+    }
+
+    fn __call(t, args) {
+        ins = {
+            field = t,
+            settings = {
+                field_default = nil,
+                null = false,
+                unique = false,
+                max_length = nil,
+                primary_key = false,
+                escape_value = false,
+                foreign_key = false
+            }
+        }
+
+        ins.createType = { self, config in
+            ftype = self.field.field_type
+
+            if self.settings.max_length and self.settings.max_length > 0 {
+                ftype ..= "(" .. self.settings.max_length .. ")"
+            }
+
+            if self.settings.primary_key {
+                ftype ..= " PRIMARY KEY"
+            }
+
+            if self.settings.auto_increment {
+                if config.db_type == kDBType.SQLITE {
+                    ftype ..= " AUTOINCREMENT"
+                } else {
+                    ftype ..= " AUTO_INCREMENT"
+                }
+            }
+    
+            if self.settings.unique {
+                ftype ..= " UNIQUE"
+            }
+
+            ftype ..= (self.settings.null and " NULL"  or " NOT NULL")
+            return ftype
+        }
+
+        -- settins
+
+        for k, v in pairs(t.settings) {
+            ins.settings[k] = v
+        }
+
+        -- Set settings for column
+        if args.max_length {
+            ins.settings.max_length = args.max_length
+        }
+
+        if args.null ~= nil {
+            ins.settings.null = args.null
+        }
+
+        if ins.settings.foreign_key and args.to_table and args.to_table:isKindOf(_db_table) {
+            ins.settings.to_tbl_name = args.to_table.tbl_name
+        }
+
+        if args.escape_value {
+            ins.settings.escape_value = true
+        }
+
+        if args.unique {
+            ins.settings.unique = args.unique
+        }
+
+        return ins
+    }
+
+    static fn register(args) {
+        args = args or {}
+        return DBFieldBase(args)
+    }
+}
+
+DBField = {
+
+    PrimaryField = DBFieldBase.register({
+        field_name = "primary",
+        field_type = "integer",
+        validator = _isInt,
+        settings = {
+            null = true,
+            primary_key = true,
+            auto_increment = true
+        },
+        toType = _toNumber
+    }),
+
+    IntegerField = DBFieldBase.register({
+        field_name = "integer",
+        field_type = "integer",
+        validator = _isInt,
+        toType = _toNumber
+    }),
+
+    CharField = DBFieldBase.register({
+        field_name = "char",
+        field_type = "varchar",
+        validator = _isStr,
+        as = _saveAsStr
+    }),
+
+    TextField = DBFieldBase.register({
+        field_name = "text",
+        field_type = "text",
+        validator = _isStr,
+        as = _saveAsStr
+    }),
+
+    BooleanField = DBFieldBase.register({
+        field_name = "boolean",
+        field_type = "integer",
+        as = { value in
+            return value and 1 or 0
+        },
+        toType = { value in
+            if _isBool(value) {
+                return value
+            } else {
+                return value == 1 and true or false
+            }
+        }
+    }),
+
+    BlobField = DBFieldBase.register({
+        field_name = "blob",
+        field_type = "blob"
+    }),
+
+    DateTimeField = DBFieldBase.register({
+        field_name = "date_time",
+        field_type = "integer",
+        validator = { value in
+            if (_isTable(value) and value.isdst ~= nil) or _isInt(value) {
+                return true
+            }
+        },
+        as = { value in
+            return _isInt(value) and value or os.time(value)
+        },
+        toType = { value in
+            return os.date("*t", _toNumber(value))
+        }
+    }),
+
+    ForeignKey = DBFieldBase.register({
+        field_name = "foreign_key",
+        field_type = "integer",
+        settings = {
+            null = true,
+            foreign_key = true
+        },
+        toType = _toNumber
+    }),
+
+    register = DBFieldBase.register
+}
+
+class DBTable {
+    -- config: database config
+    -- db_ins: database instance
+
+    -- tbl_name: table name
+    -- col_names: col name array
+
+    --- init table instance
+    ---@param db_ins table
+    ---@param tbl_config table, { tbl_name = string, column_order = table }
+    ---@param tbl_column table
+    fn init(db_ins, tbl_config, tbl_column) {
+        self.config = db_ins.config
+        self.db_ins = db_ins
+        --
+        self.tbl_name = tbl_config.table_name
+        self.col_names = {}
+
+        -- check database instance table
+        db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+        if _isTable(db_tbl) and db_tbl[self.tbl_name] {
+            for i, coltype in ipairs(db_tbl[self.tbl_name][2]) {
+                self.col_names[i] = coltype.name
+            }
+            return
+        }
+
+        -- get column order
+        column_order = { "id" }
+        if _isTable(tbl_config.column_order) {
+            for _, v in ipairs(tbl_config.column_order) {
+                column_order[#column_order + 1] = v
+            }
+        }
+
+        for k, _ in pairs(tbl_column) {
+            if not _tableHasValue(column_order, k) {
+                column_order[#column_order + 1] = k
+            }
+        }
+
+        -- first gen id field
+        tbl_column.id = DBField.PrimaryField({auto_increment = true})
+
+        -- record column
+        col_type_array = {}
+        foreign_type_array = {}
+        for i, colname in ipairs(column_order) {
+            coltype = tbl_column[colname]
+            coltype.name = colname
+            coltype.tbl_name = self.tbl_name
+            col_type_array[i] = coltype
+            if coltype.settings.foreign_key {
+                foreign_type_array[#foreign_type_array + 1] = coltype
+            }
+            self.col_names[i] = colname
+        }
+
+        -- store in database instance table
+        db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+        if _isTable(db_tbl) {
+            db_tbl[self.tbl_name] = {
+                self,
+                col_type_array,
+                foreign_type_array
+            }
+        }
+
+        -- try create table
+        if self.config.new_table {
+            self:createTable()
+        }
+    }
+
+    fn print(ttype, msg) {
+        self.config:print(ttype, msg)
+    }
+
+    --- return all column field array
+    fn getColTypeArray() {
+        db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+        if _isTable(db_tbl) {
+            tbl_array = db_tbl[self.tbl_name]
+            if _isTable(tbl_array) and #tbl_array > 1 {
+                return tbl_array[2]
+            }
+        }
+        return {}
+    }
+
+    --- return foreign column field array
+    fn getForeignTypeArray() {
+        db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+        if _isTable(db_tbl) {
+            tbl_array = db_tbl[self.tbl_name]
+            if _isTable(tbl_array) and #tbl_array > 2 {
+                return tbl_array[3]
+            }
+        }
+        return {}
+    }
+
+    fn createTable() {
+        -- table information
+        tbl_name = self.tbl_name
+        col_type_array = self:getColTypeArray()
+        foreign_type_array = self:getForeignTypeArray()
+
+        self:print(kLog.INFO, "Start create table: " .. tbl_name)
+
+        -- other variables
+        create_query = "CREATE TABLE IF NOT EXISTS `" .. tbl_name .. "` \n("
+        counter = 0
+        column_query = ""
+
+        for _, coltype in ipairs(col_type_array) {
+            column_query = "\n     `" .. coltype.name .. "` " .. coltype:createType(self.config)
+
+            if counter > 0 {
+                column_query = "," .. column_query
+            }
+
+            create_query ..= column_query
+            counter += 1
+        }
+
+        for _, coltype in pairs(foreign_type_array) {
+            create_query ..= (",\n     FOREIGN KEY(`" ..
+                                coltype.name .. "`)" .. " REFERENCES `" ..
+                                coltype.settings.to_tbl_name ..
+                                "`(`id`)")
+        }
+
+        create_query ..= "\n)"
+
+        self.db_ins:execute(create_query)
+    }
+
+    fn __tostring(t) {
+        return strfmt("<DBTable(%s): %p>", t.tbl_name, t)
+    }
+
+    fn __index(t, k) {
+        if k == 'get' {
+            return true, DBSelect(t)
+        }
+    }
+
+    fn __call(t, row_data) {
+        return DBQuery(t, row_data)
+    }
+
+    -- parse column in correct types
+    fn column(column) {
+        tbl_name = self.tbl_name
+
+        if _isTable(column) and column._cls_type == kAGGREGATOR {
+            column.col_name = tbl_name .. column.col_name
+            column ..= ""
+        }
+
+        return ("`" .. tbl_name .. "`.`" .. column .. "`"), (tbl_name .. "__" .. column)
+    }
+
+    fn hasColumn(col_name, quiet) {
+        for _, name in ipairs(self.col_names) {
+            if name == col_name {
+                return true
+            }
+        }
+        if not quiet {
+            self:print(kLog.WARNING, "Can't find column '" .. tostring(col_name) ..
+                       "' in table '" .. self.tbl_name .. "'")
+        }
+    }
+
+    fn getColumn(col_name, quiet) {
+        col_type_array = self:getColTypeArray()
+        for _, tbl_column in ipairs(col_type_array) {
+            if tbl_column.name == col_name {
+                return tbl_column
+            }
+        }
+        if not quiet {
+            self:print(kLog.WARNING, "Can't find column '" .. tostring(col_name) ..
+                       "' in table '" .. self.tbl_name .. "'")
+        }
+    }
+}
+_db_table = DBTable
+
+-- database instance
+class DBInstance {
+
+    fn init(config, db_env, db_conn) {
+        self.config = config
+        self.db_env = db_env
+        self.db_conn = db_conn
+
+        -- store in global db instance table
+        G_DB_Ins_Tbl[config.db_path] = {}
+    }
+
+    fn deinit() {
+        self:close()
+    }
+
+    -- close db_env and db_conn, http://realtimelogic.com/ba/doc/en/lua/luasql.html
+    --
+    -- for luasql.sqlite3's `SQL Environment Objects` (db_env) and `Connection Objects` (db_conn)
+    -- need some time to close, when you require to open db_conn again in a short time,
+    -- run `collectgarbage()` to make sure all resources are closed.
+    fn close() {
+        if self.db_env and self.db_conn {
+            ret_1 = self.db_conn:close()
+            ret_2 = self.db_env:close()
+            self.db_conn = nil
+            self.db_env = nil
+            print("[SQL-ORM] Disconnect SQLite3", self.config.db_path, ret_1, ret_2)
+        }
+        G_DB_Ins_Tbl[self.config.db_path] = nil
+    }
+
+    fn print(ttype, msg) {
+        self.config:print(ttype, msg)
+    }
+
+    fn execute(query) {
+        guard self.db_conn != nil else {
+            self:print(kLog.ERROR, "Database disconnected")
+            return
+        }
+        self:print(kLog.DEBUG, query)
+
+        result = self.db_conn:execute(query)
+
+        if result {
+            return result
+        } else {
+            self:print(kLog.WARNING, "Wrong SQL query")
+        }
+    }
+
+    -- Return insert query id
+    fn insert(query) {
+        return self:execute(query)
+    }
+
+    -- get parsed data
+    fn rows(query, tbl_ins) {
+        cursor = self:execute(query)
+        data = {}
+
+        if cursor {
+            row = cursor:fetch({}, "a")
+            current_row = {}
+
+            while row {
+                for colname, value in pairs(row) {
+                    current_table, colname = _dividedInto(colname, "__")
+
+                    if current_table == tbl_ins.tbl_name {
+                        current_row[colname] = value
+                    } else {
+                        if not current_row[current_table] {
+                            current_row[current_table] = {}
+                        }
+                        current_row[current_table][colname] = value
+                    }
+                }
+
+                data[#data + 1] = current_row
+                current_row = {}
+                row = cursor:fetch({}, "a")
+            }
+            cursor:close()
+        }
+        return data
+    }
+
+    -- return table_name relative tbl_ins
+    fn getTableWith(tbl_name) {
+        db_tbl = G_DB_Ins_Tbl[self.config.db_path]
+        if _isTable(db_tbl) {
+            return db_tbl[tbl_name][1]
+        }
+    }
+}
+-- database context
+struct DBConfig {
+
+    new_table = false
+    log_debug = true
+    log_trace = true
+
+    db_type = kDBType.SQLITE -- default value, only support sqlite3 now
+    db_path = "database.db"
+
+    print = 1 -- _emptyPrint or _dbPrint
+
+    fn init(config) {
+        self.print = self._noPrint
+        guard _isTable(config) else {
+            return
+        }
+        keys = {"new_table", "log_debug", "log_trace", "db_type", "db_path"}
+        for _, k in ipairs(keys) {
+            self[k] = config[k]
+        }
+        if config.log_debug or config.log_trace {
+            self.print = self._ioPrint
+        }
+    }
+
+    fn _noPrint() {
+    }
+
+    fn _ioPrint(ttype, msg) {
+        if self.log_trace {
+            switch ttype {
+            case kLog.ERROR:
+                print("[SQL-ORM:Error] " .. msg)
+                os.exit()
+            case kLog.WARNING:
+                print("[SQL-ORM:Warning] " .. msg)
+            case kLog.INFO:
+                print("[SQL-ORM:Info] " .. msg)
+            }
+        }
+        if self.log_debug and ttype == kLog.DEBUG {
+            print("[SQL-ORM:Debug] " .. msg)
+        }
+    }
+}
+
+--- Create database config
+---@param config table
+fn newDatabase(_, config) {
+    if not config {
+        print("[SQL-ORM:Startup] Using default config")
+        config = DBConfig()
+    } else {
+        config.db_type = config.db_type or DBConfig.db_type
+        config.db_path = config.db_path or DBConfig.db_path
+        config = DBConfig(config)
+    }
+
+    -- if db_path exist, igonre current config, return original one
+    db_tbl = G_DB_Ins_Tbl[config.db_path]
+    guard not db_tbl else {
+        return db_tbl[1], db_tbl[2], DBField, DBOrderBy
+    }
+
+    -- create connection
+    db_env = require("luasql.sqlite3").sqlite3()
+    db_conn = db_env:connect(config.db_path)
+    guard db_conn else {
+        print("[SQL-ORM] Connect SQLite3", config.db_path)
+        return
+    }
+    print("[SQL-ORM] Connect SQLite3", config.db_path)
+
+    -- create db instance and table wrapper
+    db_ins = DBInstance(config, db_env, db_conn)
+    DBTableWrapper = setmetatable({}, { __call = { _, tbl_config, tbl_column in
+        if _isTable(tbl_config) and _isTable(tbl_column) and _isStr(tbl_config.table_name) {
+            return DBTable(db_ins, tbl_config, tbl_column)
+        }
+    }})
+
+    -- store db_ins, tablewrapper into db_tbl
+    db_tbl = G_DB_Ins_Tbl[config.db_path]
+    if db_tbl {
+        db_tbl[1] = db_ins
+        db_tbl[2] = DBTableWrapper
+    }
+
+    return db_ins, DBTableWrapper, DBField, DBOrderBy
+}
+
+return setmetatable({}, { __call = newDatabase })
