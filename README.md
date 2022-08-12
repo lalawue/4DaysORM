@@ -3,7 +3,7 @@ All local variable version and all in one Lua4DaysORM from [itdxer/4DaysORM](htt
 
 # Lua-ORM 10 minutes tutorial #
 
-support Lua 5.2+ or LuaJIT with `LUAJIT_ENABLE_LUA52COMPAT` support.
+support Lua 5.1 or LuaJIT.
 
 ## Database configuration ##
 
@@ -90,7 +90,7 @@ Supported types of table fields
 3. `TextField` - Creates `TEXT` field
 4. `BlobField` - Creates `BLOB` field
 5. `BooleanField` - Creates `BOOLEAN` field
-6. `DateTimeField` - Creates `INTEGER` field but brings back `os.date` instance 
+6. `DateTimeField` - Creates `INTEGER` field but brings back `os.date` instance
 8. `ForeignKey` - Creates relationships between tables.
 
 Also you can create your types of table fields. But about it later.
@@ -141,7 +141,7 @@ Now try to get new username for user:
 
 
 ```lua
-print("New user name is " .. user.username) -- New user name is John Smith 
+print("New user name is " .. user.username) -- New user name is John Smith
 ```
 
 You have updated in database only the column that you changed.
@@ -214,7 +214,6 @@ But also we can **get all users** from table:
 ```lua
 local users = User.get:all()
 print("We get " .. users:count() .. " users")
-print("We get " .. #users .. " users")
 -- We get 5 users
 ```
 
@@ -257,7 +256,7 @@ But we have 2 users with age 44. We can order them by name.
 ```lua
 users = User.get:orderBy({OrderBy.DESC('age'), OrderBy.ASC('username')}):all()
 ```
-    
+
 You can order your table query by other parameters too.
 
 ### Group result ###
@@ -292,7 +291,7 @@ Great! But what if we need to do more operations than just a differentiation of 
 
 *For example we use for default `colname`. It can be any column in your model*
 
-1. `colname = value` - the same as `colname = value` 
+1. `colname = value` - the same as `colname = value`
 2. `colname__lt = value` - the same as `colname < value` *(`value` must be a number)*
 3. `colname__lte = value` - the same as `colname <= value` *(`value` must be a number)*
 4. `colname__gt = value` - the same as `colname > value` *(`value` must be a number)*
@@ -300,7 +299,7 @@ Great! But what if we need to do more operations than just a differentiation of 
 6. `colname__in = {v1, v2,...,vn}` - the same as `colname in (value1, value2,...,vn)` *(`vn` can be number, string)*
 7. `colname__notin = {v1, v2,...,vn}` - the same as `colname not in (value1, value2,...,vn)` *(`vn` can be number, string)*
 8. `colname__null = value` - if value is `true` then result is `colname is NULL`, but if value is `false` then result is `colname is not NULL`
-    
+
 ### Super SELECT ###
 
 But if we do ...
@@ -368,7 +367,7 @@ local user = User.get:join(News):first()
 print("User " .. user.id .. " has " .. user:references(News):count() .. " news")
 -- User 1 has 2 news
 
-for _, user_news in iparis(user:references(News)) do
+for _, user_news in ipairs(user:references(News):list()) do
     print(user_news.title)
 end
 -- Some news
@@ -379,7 +378,7 @@ If you want to get all the foreign/references values in your table, you can use 
 
 ```lua
 local user_one = new_one:foreign(User) -- get News foreign value combine with one news
-local news_all = user_one:references(News) -- get User references News value (list) combine with one user
+local news_all = user_one:references(News) -- get User references News value List combine with one user
 ```
 
 ## Create column types ##

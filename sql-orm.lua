@@ -1,10 +1,3 @@
---
--- Copyright (c) 2022 lalawue
---
--- This library is free software; you can redistribute it and/or modify it
--- under the terms of the MIT license. See LICENSE for details.
---
-
 local pairs = pairs
 local type = type
 local setmetatable = setmetatable
@@ -745,6 +738,12 @@ do
 			return true, t._stack[k]
 		end
 	end
+	function __ct:count()
+		return #self._stack
+	end
+	function __ct:list()
+		return self._stack
+	end
 	function __ct:withId(id)
 		if _isInt(id) then
 			for _, query in pairs(self._stack) do
@@ -758,9 +757,6 @@ do
 	end
 	function __ct:add(query_ins)
 		self._stack[#self._stack + 1] = query_ins
-	end
-	function __ct:count()
-		return #self._stack
 	end
 	function __ct:delete()
 		for _, query in ipairs(self._stack) do
@@ -778,15 +774,6 @@ do
 		end,
 		__tostring = function(t)
 			return strfmt("<QueryList(%s)#%d: %p>", t._tbl_ins.tbl_name, #t._stack, t)
-		end,
-		__len = function(t)
-			return #t._stack
-		end,
-		__ipairs = function(t)
-			return ipairs(t._stack)
-		end,
-		__pairs = function(t)
-			return pairs(t._stack)
 		end,
 	}
 	setmetatable(__ct, {

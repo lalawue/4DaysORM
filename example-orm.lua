@@ -112,13 +112,12 @@ local function testDatabase()
         print("First user name is: " .. first_user.username)
         local users = User.get:all()
         print("We get " .. users:count() .. " users")
-        print("We get " .. #users .. " users")
     end
 
     do
         print("---------------- LIMIT AND OFFSET")
         local users = User.get:limit(2):all()
-        print("We get " .. #users .. " users")
+        print("We get " .. users:count() .. " users")
         print("Second user name is: " .. users[2].username)
         print("Second user active is: " .. tostring(users[2].active))
         users = User.get:limit(2):offset(2):all()
@@ -128,13 +127,13 @@ local function testDatabase()
     do
         print("---------------- SORT DATA")
         local users = User.get:orderBy({Or.DESC('age')}):all()
-        print("-- 1 orderBy", #users, users[#users].id)
-        for k, v in pairs(users) do
+        print("-- 1 orderBy", users:count(), users[users:count()].id)
+        for k, v in pairs(users:list()) do
             print(k, v.username)
         end
         users = User.get:orderBy({Or.DESC('age'), Or.DESC('username')}):all()
-        print("-- 2 orderBy", #users, users[#users].id)
-        for k, v in ipairs(users) do
+        print("-- 2 orderBy", users:count(), users[users:count()].id)
+        for k, v in ipairs(users:list()) do
             print(k, v.username)
         end
     end
@@ -207,7 +206,7 @@ local function testDatabase()
         user = User.get:join(News):all()[1]
         print("User " .. user.id .. " has " .. user:references('news_t'):count() .. " news")
         print("User " .. user.id .. " has " .. user:references(News):count() .. " news")
-        for i, user_news in ipairs(user:references(News)) do
+        for i, user_news in ipairs(user:references(News):list()) do
             print("news " .. i .. ": ", user_news.title)
         end
     end

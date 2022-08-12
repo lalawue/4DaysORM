@@ -996,19 +996,15 @@ class DBQueryList {
         }
     }
 
-    fn __len(t) {
-        return #t._stack
-    }
-
-    fn __ipairs(t) {
-        return ipairs(t._stack)
-    }
-
-    fn __pairs(t) {
-        return pairs(t._stack)
-    }
-
     -- MARK: public
+
+    fn count() {
+        return #self._stack
+    }
+
+    fn list() {
+        return self._stack
+    }
 
     fn withId(id) {
         if _isInt(id) {
@@ -1024,10 +1020,6 @@ class DBQueryList {
 
     fn add(query_ins) {
         self._stack[#self._stack + 1] = query_ins
-    }
-
-    fn count() {
-        return #self._stack
     }
 
     fn delete() {
@@ -1113,7 +1105,7 @@ class DBFieldBase {
                     ftype ..= " AUTO_INCREMENT"
                 }
             }
-    
+
             if self.settings.unique {
                 ftype ..= " UNIQUE"
             }

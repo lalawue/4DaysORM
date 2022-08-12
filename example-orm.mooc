@@ -89,14 +89,13 @@ fn testDatabase() {
 
         users = User.get:all()
         print("We get " .. users:count() .. " users")
-        print("We get " .. #users .. " users")
     }
 
     do {
         print("---------------- LIMIT AND OFFSET")
 
         local users = User.get:limit(2):all()
-        print("We get " .. #users .. " users")
+        print("We get " .. users:count() .. " users")
         -- We get 2 2 users
         print("Second user name is: " .. users[2].username)
         -- Second user name is: Second user
@@ -113,14 +112,14 @@ fn testDatabase() {
         print("---------------- SORT DATA")
 
         users = User.get:orderBy({Or.DESC('age')}):all()
-        print("-- 1 orderBy", #users, users[#users].id)
-        for k, v in pairs(users) {
+        print("-- 1 orderBy", users:count(), users[users:count()].id)
+        for k, v in ipairs(users:list()) {
             print(k, v.username)
         }
 
         users = User.get:orderBy({Or.DESC('age'), Or.DESC('username')}):all()
-        print("-- 2 orderBy", #users, users[#users].id)
-        for k, v in ipairs(users) {
+        print("-- 2 orderBy", users:count(), users[users:count()].id)
+        for k, v in ipairs(users:list()) {
             print(k, v.username)
         }
     }
@@ -199,7 +198,7 @@ fn testDatabase() {
         print("User " .. user.id .. " has " .. user:references(News):count() .. " news")
         -- User 1 has 2 news
 
-        for i, user_news in ipairs(user:references(News)) {
+        for i, user_news in ipairs(user:references(News):list()) {
             print("news " .. i .. ": ", user_news.title)
         }
         -- Some news
