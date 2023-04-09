@@ -924,7 +924,7 @@ class DBQuery {
         update = "UPDATE `" .. tbl_ins.tbl_name .. "` "
         equation_for_set = {}
 
-        for colname, colinfo in ipairs(self._data) {
+        for colname, colinfo in pairs(self._data) {
             if colinfo.old ~= colinfo.new and colname ~= kID {
                 coltype = tbl_ins:getColumn(colname)
 
@@ -933,7 +933,6 @@ class DBQuery {
                     set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
 
                     equation_for_set[#equation_for_set + 1] = set
-                    print("--- equaltion", set)
                 } else {
                     self:_print(kLog.WARNING, "Can't update value for column `" .. _toStr(colname) .. "`")
                 }

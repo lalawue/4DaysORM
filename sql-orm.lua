@@ -479,7 +479,7 @@ do
 	end
 	-- declare end
 	local __imt = {
-		__tostring = function(t) return string.format("<class DBSelect: %p>", t) end,
+		__tostring = function(t) return "<class DBSelect" .. t.__ins_name .. ">" end,
 		__index = function(t, k)
 			local v = __ct[k]
 			if v ~= nil then rawset(t, k, v) end
@@ -490,11 +490,12 @@ do
 		__tostring = function() return "<class DBSelect>" end,
 		__index = function(t, k)
 			local v = __st and __st[k]
-			if v ~= nil then rawset(__ct, k, v) end
+			if v ~= nil then rawset(t, k, v) end
 			return v
 		end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			return ins
 		end,
@@ -642,14 +643,13 @@ do
 		local tbl_ins = self._tbl_ins
 		local update = "UPDATE `" .. tbl_ins.tbl_name .. "` "
 		local equation_for_set = {  }
-		for colname, colinfo in ipairs(self._data) do
+		for colname, colinfo in pairs(self._data) do
 			if colinfo.old ~= colinfo.new and colname ~= kID then
 				local coltype = tbl_ins:getColumn(colname)
 				if coltype and coltype.field.validator(colinfo.new) then
 					local colvalue = _escapeValue(db_ins, tbl_ins, colname, colinfo.new)
 					local set = " `" .. colname .. "` = " .. coltype.field.as(colvalue)
 					equation_for_set[#equation_for_set + 1] = set
-					print("--- equaltion", set)
 				else 
 					self:_print(kLog.WARNING, "Can't update value for column `" .. _toStr(colname) .. "`")
 				end
@@ -689,11 +689,12 @@ do
 		__tostring = function() return "<class DBQuery>" end,
 		__index = function(t, k)
 			local v = __st and __st[k]
-			if v ~= nil then rawset(__ct, k, v) end
+			if v ~= nil then rawset(t, k, v) end
 			return v
 		end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			return ins
 		end,
@@ -780,11 +781,12 @@ do
 		__tostring = function() return "<class DBQueryList>" end,
 		__index = function(t, k)
 			local v = __st and __st[k]
-			if v ~= nil then rawset(__ct, k, v) end
+			if v ~= nil then rawset(t, k, v) end
 			return v
 		end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			return ins
 		end,
@@ -879,11 +881,12 @@ do
 		__tostring = function() return "<class DBFieldBase>" end,
 		__index = function(t, k)
 			local v = __st and __st[k]
-			if v ~= nil then rawset(__ct, k, v) end
+			if v ~= nil then rawset(t, k, v) end
 			return v
 		end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			return ins
 		end,
@@ -1055,11 +1058,12 @@ do
 		__tostring = function() return "<class DBTable>" end,
 		__index = function(t, k)
 			local v = __st and __st[k]
-			if v ~= nil then rawset(__ct, k, v) end
+			if v ~= nil then rawset(t, k, v) end
 			return v
 		end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			return ins
 		end,
@@ -1145,7 +1149,7 @@ do
 	end
 	-- declare end
 	local __imt = {
-		__tostring = function(t) return string.format("<class DBInstance: %p>", t) end,
+		__tostring = function(t) return "<class DBInstance" .. t.__ins_name .. ">" end,
 		__index = function(t, k)
 			local v = __ct[k]
 			if v ~= nil then rawset(t, k, v) end
@@ -1157,11 +1161,12 @@ do
 		__tostring = function() return "<class DBInstance>" end,
 		__index = function(t, k)
 			local v = __st and __st[k]
-			if v ~= nil then rawset(__ct, k, v) end
+			if v ~= nil then rawset(t, k, v) end
 			return v
 		end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			if _VERSION == "Lua 5.1" then
 				rawset(ins, '__gc_proxy', newproxy(true))
@@ -1215,7 +1220,7 @@ do
 	end
 	-- declare end
 	local __imt = {
-		__tostring = function(t) return string.format("<struct DBConfig: %p>", t) end,
+		__tostring = function(t) return "<struct DBConfig" .. t.__ins_name .. ">" end,
 		__index = function(t, k)
 			local v = rawget(__ct, k)
 			if v ~= nil then rawset(t, k, v) end
@@ -1225,10 +1230,11 @@ do
 	}
 	DBConfig = setmetatable({}, {
 		__tostring = function() return "<struct DBConfig>" end,
-		__index = function(_, k) return rawget(__ct, k) end,
-		__newindex = function(_, k, v) if v ~= nil and rawget(__ct, k) ~= nil then rawset(__ct, k, v) end end,
+		__index = function(t, k) local v = rawget(__ct, k); if v ~= nil then rawset(t, k, v); end return v end,
+		__newindex = function(t, k, v) if v ~= nil and rawget(__ct, k) ~= nil then rawset(t, k, v) end end,
 		__call = function(_, ...)
-			local ins = setmetatable({}, __imt)
+			local t = {}; t.__ins_name = tostring(t):sub(6)
+			local ins = setmetatable(t, __imt)
 			if type(rawget(__ct,'init')) == 'function' and __ct.init(ins, ...) == false then return nil end
 			return ins
 		end,
