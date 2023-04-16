@@ -205,6 +205,11 @@ fn testDatabase() {
         -- Other title
     }
 
+    do {
+        print("---------------- VACUUM")
+        DBIns:execute("VACUUM")
+    }
+
     print("---------------- END")
     DBIns:close()
 

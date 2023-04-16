@@ -211,6 +211,11 @@ local function testDatabase()
         end
     end
 
+    do
+        print("---------------- VACUUM")
+        DBIns:execute("VACUUM")
+    end
+
     print("---------------- END")
 
     DBIns:close()
