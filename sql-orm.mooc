@@ -1467,12 +1467,14 @@ class DBInstance {
         }
         self:print(kLog.DEBUG, query)
 
-        result = self.db_conn:execute(query)
-
+        result, emsg = self.db_conn:execute(query)
         if result {
             return result
+        } elseif type(emsg) == "string" {
+            si, ei = emsg:find(": ")
+            self:print(kLog.ERROR, emsg:sub((ei or 0) + 1))
         } else {
-            self:print(kLog.WARNING, "Wrong SQL query")
+            self:print(kLog.ERROR, "Wrong SQL query")
         }
     }
 

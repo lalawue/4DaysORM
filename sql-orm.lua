@@ -1105,11 +1105,14 @@ do
 			return 
 		end
 		self:print(kLog.DEBUG, query)
-		local result = self.db_conn:execute(query)
+		local result, emsg = self.db_conn:execute(query)
 		if result then
 			return result
+		elseif type(emsg) == "string" then
+			local si, ei = emsg:find(": ")
+			self:print(kLog.ERROR, emsg:sub((ei or 0) + 1))
 		else 
-			self:print(kLog.WARNING, "Wrong SQL query")
+			self:print(kLog.ERROR, "Wrong SQL query")
 		end
 	end
 	function __ct:insert(query)
