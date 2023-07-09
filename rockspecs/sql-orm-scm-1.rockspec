@@ -13,6 +13,11 @@ description = {
 dependencies = {
    "lua >= 5.1"
 }
+external_dependencies = {
+   SQLITE = {
+      header = "sqlite3.h"
+   }
+}
 build = {
    type = "builtin",
    modules = {
