@@ -17,6 +17,12 @@ dependencies = {
 build = {
    type = "builtin",
    modules = {
-      ["sql-orm"] = "sql-orm.lua"
+      ["sql-orm"] = "sql-orm.lua",
+      ["luasql.sqlite3"] = {
+         sources = { "src/luasql.c", "src/ls_sqlite3.c" },
+         libraries = { "sqlite3" },
+         incdirs = { "$(SQLITE_INCDIR)" },
+         libdirs = { "$(SQLITE_LIBDIR)" }
+      }
    }
 }
