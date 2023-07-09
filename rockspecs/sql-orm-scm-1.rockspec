@@ -11,8 +11,7 @@ description = {
    license = 'MIT/X11'
 }
 dependencies = {
-   "lua >= 5.1",
-   "luasql-sqlite3 >= 2.6.0"
+   "lua >= 5.1"
 }
 build = {
    type = "builtin",
